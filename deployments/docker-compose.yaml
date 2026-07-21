@@ -1,0 +1,109 @@
+version: "3.9"
+
+services:
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: Dockerfile.orchestrator
+    environment:
+      POSTGRES_DSN: postgres://loadforge:secret@postgres:5432/loadforge?sslmode=disable
+      REDIS_ADDR: redis:6379
+      NATS_URL: nats://nats:4222
+      WORKER_IMAGE: loadforge-worker:latest
+      WORKER_NAMESPACE: loadforge-workers
+      KUBE_CONFIG_PATH: /root/.kube/config
+    volumes:
+      - ~/.kube:/root/.kube:ro
+    ports:
+      - "50051:50051"
+    depends_on:
+      - postgres
+      - redis
+      - nats
+
+  apiserver:
+    build:
+      context: ..
+      dockerfile: Dockerfile.apiserver
+    environment:
+      POSTGRES_DSN: postgres://loadforge:secret@postgres:5432/loadforge?sslmode=disable
+      REDIS_ADDR: redis:6379
+      ORCHESTRATOR_ADDR: orchestrator:50051
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - orchestrator
+
+  aggregator:
+    build:
+      context: ..
+      dockerfile: Dockerfile.aggregator
+    environment:
+      NATS_URL: nats://nats:4222
+      POSTGRES_DSN: postgres://loadforge:secret@postgres:5432/loadforge?sslmode=disable
+      REDIS_ADDR: redis:6379
+    ports:
+      - "9090:9090"
+    depends_on:
+      - nats
+      - postgres
+      - redis
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile.worker
+    environment:
+      LOADFORGE_ORCHESTRATOR_ADDR: orchestrator:50051
+      LOADFORGE_TEST_RUN_ID: run-compose-123
+      LOADFORGE_WORKER_ID: worker-compose-456
+      LOADFORGE_NATS_URL: nats://nats:4222
+    depends_on:
+      - orchestrator
+      - nats
+
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: loadforge
+      POSTGRES_USER: loadforge
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    volumes:
+      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9091:9090"
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  pgdata:

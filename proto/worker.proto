@@ -1,0 +1,69 @@
+syntax = "proto3";
+package loadforge.worker.v1;
+option go_package = "github.com/vatsalchaudhary/loadforge/proto/worker/v1";
+
+// ─── Worker Registration ───────────────────────────────────────────────────
+
+message WorkerInfo {
+  string run_id    = 1;
+  string worker_id = 2;
+  string pod_ip    = 3;
+  string node_name = 4;
+  string version   = 5;
+}
+
+message TestPlanResponse {
+  string          run_id    = 1;
+  bytes           plan_json = 2;   // JSON-encoded TestPlan struct
+  int32           worker_index = 3;// which shard of virtual users this worker owns
+  int32           total_workers = 4;
+}
+
+// ─── Heartbeat ────────────────────────────────────────────────────────────
+
+message HeartbeatRequest {
+  string   worker_id    = 1;
+  string   run_id       = 2;
+  int64    timestamp_ms = 3;
+  WorkerStats stats     = 4;
+}
+
+message WorkerStats {
+  int64  active_goroutines  = 1;
+  double cpu_percent        = 2;
+  int64  memory_bytes       = 3;
+  double requests_per_sec   = 4;
+  int64  total_requests     = 5;
+  int64  total_errors       = 6;
+}
+
+message HeartbeatResponse {
+  string signal = 1;  // CONTINUE | STOP | SCALE_DOWN
+  int32  new_vu_count = 2; // if SCALE_DOWN: new target VU count for this worker
+}
+
+// ─── Stop ─────────────────────────────────────────────────────────────────
+
+message StopRequest {
+  string run_id    = 1;
+  string worker_id = 2;
+  bool   graceful  = 3;
+}
+
+message StopResponse {
+  bool   acknowledged = 1;
+  int64  drained_requests = 2;
+}
+
+// ─── Service Definition ───────────────────────────────────────────────────
+
+service WorkerControl {
+  // Worker calls on startup to get its test plan
+  rpc Register(WorkerInfo) returns (TestPlanResponse);
+
+  // Bidirectional stream: worker sends heartbeats, orchestrator sends signals
+  rpc Heartbeat(stream HeartbeatRequest) returns (stream HeartbeatResponse);
+
+  // Orchestrator calls to stop a specific worker
+  rpc Stop(StopRequest) returns (StopResponse);
+}
