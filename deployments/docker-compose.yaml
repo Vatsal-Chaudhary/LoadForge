@@ -50,6 +50,8 @@ services:
       NATS_URL: nats://nats:4222
       POSTGRES_DSN: postgres://loadforge:secret@postgres:5432/loadforge?sslmode=disable
       REDIS_ADDR: redis:6379
+      AGGREGATOR_WINDOW_SIZE: 10s
+      AGGREGATOR_GRACE_PERIOD: 1s
     ports:
       - "9090:9090"
     depends_on:
