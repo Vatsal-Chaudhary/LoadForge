@@ -12,10 +12,16 @@ services:
       WORKER_IMAGE: loadforge-worker:latest
       WORKER_NAMESPACE: loadforge-workers
       KUBE_CONFIG_PATH: /root/.kube/config
+      MAX_WORKERS_PER_TEST: "100"
+      HEARTBEAT_INTERVAL: 5s
+      SCALE_CHECK_INTERVAL: 5s
+      ORCHESTRATOR_GRPC_ADDR: orchestrator:50051
+      ORCHESTRATOR_METRICS_ADDR: :9101
     volumes:
       - ~/.kube:/root/.kube:ro
     ports:
       - "50051:50051"
+      - "9101:9101"
     depends_on:
       - postgres
       - redis
