@@ -27,7 +27,7 @@ test-integration:
 	go test ./... -tags=integration -race -count=1
 
 # ── Docker ──────────────────────────────────────────────────────────────────
-docker-build:
+docker-build: build
 	docker build -f Dockerfile.orchestrator -t $(REGISTRY)/loadforge-orchestrator:$(VERSION) .
 	docker build -f Dockerfile.worker       -t $(REGISTRY)/loadforge-worker:$(VERSION) .
 	docker build -f Dockerfile.aggregator   -t $(REGISTRY)/loadforge-aggregator:$(VERSION) .

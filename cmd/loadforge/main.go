@@ -1,7 +1,9 @@
 package main
 
-import "log"
+import "github.com/vatsalchaudhary/loadforge/cmd/loadforge/cmd"
+
+var Version = "dev"
 
 func main() {
-	log.Println("LoadForge CLI skeleton...")
+	cmd.Execute()
 }
