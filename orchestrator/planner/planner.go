@@ -2,15 +2,20 @@ package planner
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/vatsalchaudhary/loadforge/pkg/testplan"
 	"gopkg.in/yaml.v3"
 )
+
+var variablePattern = regexp.MustCompile(`\{\{\s*\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
 
 type ValidationError struct {
 	Field  string `json:"field"`
@@ -41,6 +46,65 @@ func ParseYAML(data []byte) (testplan.TestPlan, error) {
 		return plan, errs
 	}
 	return plan, nil
+}
+
+// ParseJSON resolves FDD-style {{ .name }} variables and then delegates to the
+// same strict parser and validator used by the orchestrator.
+func ParseJSON(data []byte, variables map[string]string) (testplan.TestPlan, []byte, error) {
+	var document any
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&document); err != nil {
+		return testplan.TestPlan{}, nil, ValidationErrors{{Field: "test_plan", Reason: err.Error()}}
+	}
+	resolved, unresolved := resolveValue(document, variables)
+	if len(unresolved) > 0 {
+		errs := make(ValidationErrors, 0, len(unresolved))
+		for _, name := range unresolved {
+			errs = append(errs, ValidationError{Field: "variables." + name, Reason: "required"})
+		}
+		return testplan.TestPlan{}, nil, errs
+	}
+	resolvedJSON, err := json.Marshal(resolved)
+	if err != nil {
+		return testplan.TestPlan{}, nil, err
+	}
+	plan, err := ParseYAML(resolvedJSON)
+	return plan, resolvedJSON, err
+}
+
+func resolveValue(value any, variables map[string]string) (any, []string) {
+	missing := make(map[string]struct{})
+	var walk func(any) any
+	walk = func(current any) any {
+		switch typed := current.(type) {
+		case string:
+			return variablePattern.ReplaceAllStringFunc(typed, func(match string) string {
+				name := variablePattern.FindStringSubmatch(match)[1]
+				if replacement, ok := variables[name]; ok {
+					return replacement
+				}
+				missing[name] = struct{}{}
+				return match
+			})
+		case []any:
+			for i := range typed {
+				typed[i] = walk(typed[i])
+			}
+		case map[string]any:
+			for key := range typed {
+				typed[key] = walk(typed[key])
+			}
+		}
+		return current
+	}
+	resolved := walk(value)
+	names := make([]string, 0, len(missing))
+	for name := range missing {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return resolved, names
 }
 
 func yamlError(err error) error {

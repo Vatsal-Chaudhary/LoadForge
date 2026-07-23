@@ -31,6 +31,7 @@ import (
 
 type server struct {
 	pb.UnimplementedWorkerControlServer
+	pb.UnimplementedOperatorControlServer
 	mu       sync.RWMutex
 	runs     map[string]run.TestRun
 	plans    map[string][]byte
@@ -38,6 +39,10 @@ type server struct {
 	signals  *signalHub
 	watchdog *watchdog.Manager
 	rootCtx  context.Context
+	store    fsm.Store
+	prov     scaler.Provisioner
+	cfg      run.OrchestratorConfig
+	log      *slog.Logger
 }
 
 func main() {
@@ -93,6 +98,10 @@ func main() {
 	if prov == nil {
 		prov = noopProvisioner{log: logger}
 	}
+	srv.store = fsmStore
+	srv.prov = prov
+	srv.cfg = cfg
+	srv.log = logger
 
 	srv.watchdog = &watchdog.Manager{
 		Registry:    registry,
@@ -118,6 +127,7 @@ func main() {
 	}
 	grpcServer := grpc.NewServer()
 	pb.RegisterWorkerControlServer(grpcServer, srv)
+	pb.RegisterOperatorControlServer(grpcServer, srv)
 	go func() {
 		<-rootCtx.Done()
 		grpcServer.GracefulStop()
@@ -195,6 +205,128 @@ func (s *server) addRun(testRun run.TestRun, planJSON []byte) {
 	defer s.mu.Unlock()
 	s.runs[testRun.ID] = testRun
 	s.plans[testRun.ID] = planJSON
+}
+
+func (s *server) SubmitRun(_ context.Context, req *pb.SubmitRunRequest) (*pb.SubmitRunResponse, error) {
+	if req.RunId == "" || len(req.PlanJson) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "run_id and plan_json are required")
+	}
+	plan, err := planner.ParseYAML(req.PlanJson)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid test plan: %v", err)
+	}
+	s.mu.Lock()
+	if existing, ok := s.runs[req.RunId]; ok {
+		s.mu.Unlock()
+		return &pb.SubmitRunResponse{Status: string(existing.State)}, nil
+	}
+	testRun := run.TestRun{ID: req.RunId, Plan: plan, State: run.StatePending}
+	s.runs[req.RunId] = testRun
+	s.plans[req.RunId] = append([]byte(nil), req.PlanJson...)
+	s.mu.Unlock()
+
+	go s.startSubmittedRun(testRun)
+	return &pb.SubmitRunResponse{Status: string(run.StatePending)}, nil
+}
+
+func (s *server) startSubmittedRun(testRun run.TestRun) {
+	machine := fsm.New(testRun.ID, run.StatePending, s.store, s.log)
+	if err := machine.Transition(s.rootCtx, run.StateProvisioning, "API submission accepted"); err != nil {
+		s.failRun(testRun.ID, machine, err)
+		return
+	}
+	s.setRunState(testRun.ID, run.StateProvisioning)
+	initial := testRun.Plan.LoadProfile.InitialWorkers
+	if s.cfg.MaxWorkersPerTest > 0 && initial > s.cfg.MaxWorkersPerTest {
+		initial = s.cfg.MaxWorkersPerTest
+	}
+	if err := s.prov.CreateWorkers(s.rootCtx, testRun, initial); err != nil {
+		s.failRun(testRun.ID, machine, err)
+		return
+	}
+	if err := machine.Transition(s.rootCtx, run.StateRunning, "initial fleet provisioned"); err != nil {
+		s.failRun(testRun.ID, machine, err)
+		return
+	}
+	testRun.State = run.StateRunning
+	testRun.StartedAt = time.Now().UTC()
+	s.mu.Lock()
+	s.runs[testRun.ID] = testRun
+	s.mu.Unlock()
+
+	if testRun.Plan.LoadProfile.Type == "step_ramp" {
+		stepInterval, _ := time.ParseDuration(testRun.Plan.LoadProfile.StepInterval)
+		maxWorkers := testRun.Plan.LoadProfile.MaxWorkers
+		if s.cfg.MaxWorkersPerTest > 0 && (maxWorkers == 0 || maxWorkers > s.cfg.MaxWorkersPerTest) {
+			maxWorkers = s.cfg.MaxWorkersPerTest
+		}
+		controller := &scaler.Scaler{
+			Profile: scaler.StepRampProfile{
+				InitialWorkers: testRun.Plan.LoadProfile.InitialWorkers,
+				StepSize:       testRun.Plan.LoadProfile.StepSize, StepInterval: stepInterval,
+				MaxWorkers: maxWorkers, AllowRampDown: testRun.Plan.LoadProfile.RampDown,
+			},
+			Provisioner: s.prov, Registry: s.registry,
+			Interval: s.cfg.ScaleCheckInterval, Log: s.log,
+		}
+		go func() { _ = controller.Run(s.rootCtx, testRun) }()
+	}
+}
+
+func (s *server) failRun(runID string, machine *fsm.Machine, cause error) {
+	if machine.State() != run.StateFailed && fsm.ValidTransition(machine.State(), run.StateFailed) {
+		_ = machine.Transition(s.rootCtx, run.StateFailed, cause.Error())
+	}
+	s.setRunState(runID, run.StateFailed)
+	s.log.Error("submitted run failed", "run_id", runID, "error", cause)
+}
+
+func (s *server) setRunState(runID string, state run.State) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item := s.runs[runID]
+	item.State = state
+	if state == run.StateRunning && item.StartedAt.IsZero() {
+		item.StartedAt = time.Now().UTC()
+	}
+	s.runs[runID] = item
+}
+
+func (s *server) StopRun(_ context.Context, req *pb.StopRunRequest) (*pb.StopRunResponse, error) {
+	s.mu.RLock()
+	testRun, ok := s.runs[req.RunId]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, status.Error(codes.NotFound, "run not found")
+	}
+	if testRun.State == run.StateDraining || testRun.State == run.StateDone || testRun.State == run.StateFailed {
+		return &pb.StopRunResponse{Status: string(testRun.State)}, nil
+	}
+	machine := fsm.New(testRun.ID, testRun.State, s.store, s.log)
+	if err := machine.Transition(s.rootCtx, run.StateDraining, "operator requested stop"); err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "stop run: %v", err)
+	}
+	s.setRunState(testRun.ID, run.StateDraining)
+	go func() {
+		count, err := s.registry.Count(s.rootCtx, testRun.ID)
+		if err == nil {
+			err = s.prov.DrainAndRemoveWorkers(s.rootCtx, testRun, count)
+		}
+		if err != nil {
+			s.failRun(testRun.ID, machine, err)
+			return
+		}
+		if err := machine.Transition(s.rootCtx, run.StateDone, "workers drained"); err != nil {
+			s.failRun(testRun.ID, machine, err)
+			return
+		}
+		s.setRunState(testRun.ID, run.StateDone)
+	}()
+	return &pb.StopRunResponse{Status: string(run.StateDraining)}, nil
+}
+
+func (s *server) Health(context.Context, *pb.HealthRequest) (*pb.HealthResponse, error) {
+	return &pb.HealthResponse{Serving: true}, nil
 }
 
 func (s *server) Register(ctx context.Context, req *pb.WorkerInfo) (*pb.TestPlanResponse, error) {

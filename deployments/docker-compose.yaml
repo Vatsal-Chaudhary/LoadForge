@@ -35,12 +35,17 @@ services:
       POSTGRES_DSN: postgres://loadforge:secret@postgres:5432/loadforge?sslmode=disable
       REDIS_ADDR: redis:6379
       ORCHESTRATOR_ADDR: orchestrator:50051
+      NATS_URL: nats://nats:4222
+      API_KEY_PEPPER: change-me-before-production
+      API_RATE_LIMIT_RPS: "10"
+      API_RATE_LIMIT_BURST: "20"
     ports:
       - "8080:8080"
     depends_on:
       - postgres
       - redis
       - orchestrator
+      - nats
 
   aggregator:
     build:

@@ -196,3 +196,181 @@ var WorkerControl_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "proto/worker.proto",
 }
+
+const (
+	OperatorControl_SubmitRun_FullMethodName = "/loadforge.worker.v1.OperatorControl/SubmitRun"
+	OperatorControl_StopRun_FullMethodName   = "/loadforge.worker.v1.OperatorControl/StopRun"
+	OperatorControl_Health_FullMethodName    = "/loadforge.worker.v1.OperatorControl/Health"
+)
+
+// OperatorControlClient is the client API for OperatorControl service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type OperatorControlClient interface {
+	SubmitRun(ctx context.Context, in *SubmitRunRequest, opts ...grpc.CallOption) (*SubmitRunResponse, error)
+	StopRun(ctx context.Context, in *StopRunRequest, opts ...grpc.CallOption) (*StopRunResponse, error)
+	Health(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error)
+}
+
+type operatorControlClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewOperatorControlClient(cc grpc.ClientConnInterface) OperatorControlClient {
+	return &operatorControlClient{cc}
+}
+
+func (c *operatorControlClient) SubmitRun(ctx context.Context, in *SubmitRunRequest, opts ...grpc.CallOption) (*SubmitRunResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitRunResponse)
+	err := c.cc.Invoke(ctx, OperatorControl_SubmitRun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorControlClient) StopRun(ctx context.Context, in *StopRunRequest, opts ...grpc.CallOption) (*StopRunResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StopRunResponse)
+	err := c.cc.Invoke(ctx, OperatorControl_StopRun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *operatorControlClient) Health(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HealthResponse)
+	err := c.cc.Invoke(ctx, OperatorControl_Health_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// OperatorControlServer is the server API for OperatorControl service.
+// All implementations must embed UnimplementedOperatorControlServer
+// for forward compatibility.
+type OperatorControlServer interface {
+	SubmitRun(context.Context, *SubmitRunRequest) (*SubmitRunResponse, error)
+	StopRun(context.Context, *StopRunRequest) (*StopRunResponse, error)
+	Health(context.Context, *HealthRequest) (*HealthResponse, error)
+	mustEmbedUnimplementedOperatorControlServer()
+}
+
+// UnimplementedOperatorControlServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedOperatorControlServer struct{}
+
+func (UnimplementedOperatorControlServer) SubmitRun(context.Context, *SubmitRunRequest) (*SubmitRunResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SubmitRun not implemented")
+}
+func (UnimplementedOperatorControlServer) StopRun(context.Context, *StopRunRequest) (*StopRunResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopRun not implemented")
+}
+func (UnimplementedOperatorControlServer) Health(context.Context, *HealthRequest) (*HealthResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Health not implemented")
+}
+func (UnimplementedOperatorControlServer) mustEmbedUnimplementedOperatorControlServer() {}
+func (UnimplementedOperatorControlServer) testEmbeddedByValue()                         {}
+
+// UnsafeOperatorControlServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to OperatorControlServer will
+// result in compilation errors.
+type UnsafeOperatorControlServer interface {
+	mustEmbedUnimplementedOperatorControlServer()
+}
+
+func RegisterOperatorControlServer(s grpc.ServiceRegistrar, srv OperatorControlServer) {
+	// If the following call panics, it indicates UnimplementedOperatorControlServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&OperatorControl_ServiceDesc, srv)
+}
+
+func _OperatorControl_SubmitRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitRunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorControlServer).SubmitRun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorControl_SubmitRun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorControlServer).SubmitRun(ctx, req.(*SubmitRunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorControl_StopRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopRunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorControlServer).StopRun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorControl_StopRun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorControlServer).StopRun(ctx, req.(*StopRunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OperatorControl_Health_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HealthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OperatorControlServer).Health(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OperatorControl_Health_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OperatorControlServer).Health(ctx, req.(*HealthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// OperatorControl_ServiceDesc is the grpc.ServiceDesc for OperatorControl service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var OperatorControl_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "loadforge.worker.v1.OperatorControl",
+	HandlerType: (*OperatorControlServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SubmitRun",
+			Handler:    _OperatorControl_SubmitRun_Handler,
+		},
+		{
+			MethodName: "StopRun",
+			Handler:    _OperatorControl_StopRun_Handler,
+		},
+		{
+			MethodName: "Health",
+			Handler:    _OperatorControl_Health_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "proto/worker.proto",
+}

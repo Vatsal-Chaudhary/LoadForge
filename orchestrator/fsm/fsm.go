@@ -86,10 +86,10 @@ func ValidTransition(from, to run.State) bool {
 }
 
 var validTransitions = map[run.State]map[run.State]bool{
-	run.StatePending:      {run.StateProvisioning: true, run.StateFailed: true},
-	run.StateProvisioning: {run.StateRunning: true, run.StateFailed: true},
+	run.StatePending:      {run.StateProvisioning: true, run.StateDraining: true, run.StateFailed: true},
+	run.StateProvisioning: {run.StateRunning: true, run.StateDraining: true, run.StateFailed: true},
 	run.StateRunning:      {run.StateScaling: true, run.StateDraining: true, run.StateFailed: true},
-	run.StateScaling:      {run.StateRunning: true, run.StateFailed: true},
+	run.StateScaling:      {run.StateRunning: true, run.StateDraining: true, run.StateFailed: true},
 	run.StateDraining:     {run.StateDone: true, run.StateFailed: true},
 	run.StateDone:         {},
 	run.StateFailed:       {},
@@ -144,8 +144,30 @@ CREATE TABLE IF NOT EXISTS worker_events (
 }
 
 func (s *PostgresStore) PersistTransition(ctx context.Context, t Transition) error {
-	_, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `
 INSERT INTO test_run_state_transitions(run_id, from_state, to_state, reason, created_at)
-VALUES ($1, $2, $3, $4, $5)`, t.RunID, t.From, t.To, t.Reason, t.CreatedAt)
-	return err
+VALUES ($1, $2, $3, $4, $5)`, t.RunID, t.From, t.To, t.Reason, t.CreatedAt); err != nil {
+		return err
+	}
+	var testRunsTable sql.NullString
+	if err = tx.QueryRowContext(ctx, `SELECT to_regclass('public.test_runs')::text`).Scan(&testRunsTable); err != nil {
+		return err
+	}
+	if testRunsTable.Valid {
+		_, err = tx.ExecContext(ctx, `
+UPDATE test_runs
+SET status = $2,
+	started_at = CASE WHEN $2 = 'RUNNING' THEN COALESCE(started_at, $3) ELSE started_at END,
+	ended_at = CASE WHEN $2 IN ('DONE', 'FAILED') THEN COALESCE(ended_at, $3) ELSE ended_at END
+WHERE id::text = $1`, t.RunID, t.To, t.CreatedAt)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

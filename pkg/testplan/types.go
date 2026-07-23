@@ -14,6 +14,7 @@ type Target struct {
 	BaseURL       string `yaml:"base_url" json:"base_url"`
 	TLSSkipVerify bool   `yaml:"tls_skip_verify" json:"tls_skip_verify"`
 	Timeout       string `yaml:"timeout" json:"timeout"` // e.g., "30s"
+	AllowInternal bool   `yaml:"allow_internal,omitempty" json:"allow_internal,omitempty"`
 }
 
 type LoadProfile struct {
@@ -51,7 +52,7 @@ type Extraction struct {
 }
 
 type Assertion struct {
-	Field    string `yaml:"field" json:"field"` // status_code | latency_ms | body_contains
+	Field    string `yaml:"field" json:"field"`       // status_code | latency_ms | body_contains
 	Operator string `yaml:"operator" json:"operator"` // eq | lt | gt | contains
 	Value    string `yaml:"value" json:"value"`
 }

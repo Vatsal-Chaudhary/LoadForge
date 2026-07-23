@@ -481,6 +481,273 @@ func (x *StopResponse) GetDrainedRequests() int64 {
 	return 0
 }
 
+// OperatorControl is the internal API used by the REST front door. It is
+// deliberately separate from WorkerControl so worker credentials cannot
+// submit or stop whole runs.
+type SubmitRunRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	PlanJson      []byte                 `protobuf:"bytes,2,opt,name=plan_json,json=planJson,proto3" json:"plan_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitRunRequest) Reset() {
+	*x = SubmitRunRequest{}
+	mi := &file_proto_worker_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitRunRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitRunRequest) ProtoMessage() {}
+
+func (x *SubmitRunRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_worker_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitRunRequest.ProtoReflect.Descriptor instead.
+func (*SubmitRunRequest) Descriptor() ([]byte, []int) {
+	return file_proto_worker_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SubmitRunRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *SubmitRunRequest) GetPlanJson() []byte {
+	if x != nil {
+		return x.PlanJson
+	}
+	return nil
+}
+
+type SubmitRunResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitRunResponse) Reset() {
+	*x = SubmitRunResponse{}
+	mi := &file_proto_worker_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitRunResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitRunResponse) ProtoMessage() {}
+
+func (x *SubmitRunResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_worker_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitRunResponse.ProtoReflect.Descriptor instead.
+func (*SubmitRunResponse) Descriptor() ([]byte, []int) {
+	return file_proto_worker_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *SubmitRunResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type StopRunRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopRunRequest) Reset() {
+	*x = StopRunRequest{}
+	mi := &file_proto_worker_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopRunRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopRunRequest) ProtoMessage() {}
+
+func (x *StopRunRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_worker_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopRunRequest.ProtoReflect.Descriptor instead.
+func (*StopRunRequest) Descriptor() ([]byte, []int) {
+	return file_proto_worker_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *StopRunRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+type StopRunResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopRunResponse) Reset() {
+	*x = StopRunResponse{}
+	mi := &file_proto_worker_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopRunResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopRunResponse) ProtoMessage() {}
+
+func (x *StopRunResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_worker_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopRunResponse.ProtoReflect.Descriptor instead.
+func (*StopRunResponse) Descriptor() ([]byte, []int) {
+	return file_proto_worker_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *StopRunResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type HealthRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HealthRequest) Reset() {
+	*x = HealthRequest{}
+	mi := &file_proto_worker_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthRequest) ProtoMessage() {}
+
+func (x *HealthRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_worker_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
+func (*HealthRequest) Descriptor() ([]byte, []int) {
+	return file_proto_worker_proto_rawDescGZIP(), []int{11}
+}
+
+type HealthResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Serving       bool                   `protobuf:"varint,1,opt,name=serving,proto3" json:"serving,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HealthResponse) Reset() {
+	*x = HealthResponse{}
+	mi := &file_proto_worker_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthResponse) ProtoMessage() {}
+
+func (x *HealthResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_worker_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
+func (*HealthResponse) Descriptor() ([]byte, []int) {
+	return file_proto_worker_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *HealthResponse) GetServing() bool {
+	if x != nil {
+		return x.Serving
+	}
+	return false
+}
+
 var File_proto_worker_proto protoreflect.FileDescriptor
 
 const file_proto_worker_proto_rawDesc = "" +
@@ -521,11 +788,27 @@ const file_proto_worker_proto_rawDesc = "" +
 	"\bgraceful\x18\x03 \x01(\bR\bgraceful\"]\n" +
 	"\fStopResponse\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12)\n" +
-	"\x10drained_requests\x18\x02 \x01(\x03R\x0fdrainedRequests2\x90\x02\n" +
+	"\x10drained_requests\x18\x02 \x01(\x03R\x0fdrainedRequests\"F\n" +
+	"\x10SubmitRunRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1b\n" +
+	"\tplan_json\x18\x02 \x01(\fR\bplanJson\"+\n" +
+	"\x11SubmitRunResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\"'\n" +
+	"\x0eStopRunRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\")\n" +
+	"\x0fStopRunResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\"\x0f\n" +
+	"\rHealthRequest\"*\n" +
+	"\x0eHealthResponse\x12\x18\n" +
+	"\aserving\x18\x01 \x01(\bR\aserving2\x90\x02\n" +
 	"\rWorkerControl\x12R\n" +
 	"\bRegister\x12\x1f.loadforge.worker.v1.WorkerInfo\x1a%.loadforge.worker.v1.TestPlanResponse\x12^\n" +
 	"\tHeartbeat\x12%.loadforge.worker.v1.HeartbeatRequest\x1a&.loadforge.worker.v1.HeartbeatResponse(\x010\x01\x12K\n" +
-	"\x04Stop\x12 .loadforge.worker.v1.StopRequest\x1a!.loadforge.worker.v1.StopResponseB6Z4github.com/vatsalchaudhary/loadforge/proto/worker/v1b\x06proto3"
+	"\x04Stop\x12 .loadforge.worker.v1.StopRequest\x1a!.loadforge.worker.v1.StopResponse2\x96\x02\n" +
+	"\x0fOperatorControl\x12Z\n" +
+	"\tSubmitRun\x12%.loadforge.worker.v1.SubmitRunRequest\x1a&.loadforge.worker.v1.SubmitRunResponse\x12T\n" +
+	"\aStopRun\x12#.loadforge.worker.v1.StopRunRequest\x1a$.loadforge.worker.v1.StopRunResponse\x12Q\n" +
+	"\x06Health\x12\".loadforge.worker.v1.HealthRequest\x1a#.loadforge.worker.v1.HealthResponseB6Z4github.com/vatsalchaudhary/loadforge/proto/worker/v1b\x06proto3"
 
 var (
 	file_proto_worker_proto_rawDescOnce sync.Once
@@ -539,7 +822,7 @@ func file_proto_worker_proto_rawDescGZIP() []byte {
 	return file_proto_worker_proto_rawDescData
 }
 
-var file_proto_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_proto_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_proto_worker_proto_goTypes = []any{
 	(*WorkerInfo)(nil),        // 0: loadforge.worker.v1.WorkerInfo
 	(*TestPlanResponse)(nil),  // 1: loadforge.worker.v1.TestPlanResponse
@@ -548,20 +831,32 @@ var file_proto_worker_proto_goTypes = []any{
 	(*HeartbeatResponse)(nil), // 4: loadforge.worker.v1.HeartbeatResponse
 	(*StopRequest)(nil),       // 5: loadforge.worker.v1.StopRequest
 	(*StopResponse)(nil),      // 6: loadforge.worker.v1.StopResponse
+	(*SubmitRunRequest)(nil),  // 7: loadforge.worker.v1.SubmitRunRequest
+	(*SubmitRunResponse)(nil), // 8: loadforge.worker.v1.SubmitRunResponse
+	(*StopRunRequest)(nil),    // 9: loadforge.worker.v1.StopRunRequest
+	(*StopRunResponse)(nil),   // 10: loadforge.worker.v1.StopRunResponse
+	(*HealthRequest)(nil),     // 11: loadforge.worker.v1.HealthRequest
+	(*HealthResponse)(nil),    // 12: loadforge.worker.v1.HealthResponse
 }
 var file_proto_worker_proto_depIdxs = []int32{
-	3, // 0: loadforge.worker.v1.HeartbeatRequest.stats:type_name -> loadforge.worker.v1.WorkerStats
-	0, // 1: loadforge.worker.v1.WorkerControl.Register:input_type -> loadforge.worker.v1.WorkerInfo
-	2, // 2: loadforge.worker.v1.WorkerControl.Heartbeat:input_type -> loadforge.worker.v1.HeartbeatRequest
-	5, // 3: loadforge.worker.v1.WorkerControl.Stop:input_type -> loadforge.worker.v1.StopRequest
-	1, // 4: loadforge.worker.v1.WorkerControl.Register:output_type -> loadforge.worker.v1.TestPlanResponse
-	4, // 5: loadforge.worker.v1.WorkerControl.Heartbeat:output_type -> loadforge.worker.v1.HeartbeatResponse
-	6, // 6: loadforge.worker.v1.WorkerControl.Stop:output_type -> loadforge.worker.v1.StopResponse
-	4, // [4:7] is the sub-list for method output_type
-	1, // [1:4] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3,  // 0: loadforge.worker.v1.HeartbeatRequest.stats:type_name -> loadforge.worker.v1.WorkerStats
+	0,  // 1: loadforge.worker.v1.WorkerControl.Register:input_type -> loadforge.worker.v1.WorkerInfo
+	2,  // 2: loadforge.worker.v1.WorkerControl.Heartbeat:input_type -> loadforge.worker.v1.HeartbeatRequest
+	5,  // 3: loadforge.worker.v1.WorkerControl.Stop:input_type -> loadforge.worker.v1.StopRequest
+	7,  // 4: loadforge.worker.v1.OperatorControl.SubmitRun:input_type -> loadforge.worker.v1.SubmitRunRequest
+	9,  // 5: loadforge.worker.v1.OperatorControl.StopRun:input_type -> loadforge.worker.v1.StopRunRequest
+	11, // 6: loadforge.worker.v1.OperatorControl.Health:input_type -> loadforge.worker.v1.HealthRequest
+	1,  // 7: loadforge.worker.v1.WorkerControl.Register:output_type -> loadforge.worker.v1.TestPlanResponse
+	4,  // 8: loadforge.worker.v1.WorkerControl.Heartbeat:output_type -> loadforge.worker.v1.HeartbeatResponse
+	6,  // 9: loadforge.worker.v1.WorkerControl.Stop:output_type -> loadforge.worker.v1.StopResponse
+	8,  // 10: loadforge.worker.v1.OperatorControl.SubmitRun:output_type -> loadforge.worker.v1.SubmitRunResponse
+	10, // 11: loadforge.worker.v1.OperatorControl.StopRun:output_type -> loadforge.worker.v1.StopRunResponse
+	12, // 12: loadforge.worker.v1.OperatorControl.Health:output_type -> loadforge.worker.v1.HealthResponse
+	7,  // [7:13] is the sub-list for method output_type
+	1,  // [1:7] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_proto_worker_proto_init() }
@@ -575,9 +870,9 @@ func file_proto_worker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_worker_proto_rawDesc), len(file_proto_worker_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   13,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_proto_worker_proto_goTypes,
 		DependencyIndexes: file_proto_worker_proto_depIdxs,
