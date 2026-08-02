@@ -189,5 +189,12 @@ func validate(plan testplan.TestPlan) ValidationErrors {
 			duration(stepPrefix+".think_time", step.ThinkTime, false)
 		}
 	}
+	if plan.Thresholds != nil {
+		switch strings.ToLower(strings.TrimSpace(plan.Thresholds.OnBreach)) {
+		case "", "report", "stop":
+		default:
+			errs = append(errs, ValidationError{Field: "thresholds.on_breach", Reason: "must be stop or report"})
+		}
+	}
 	return errs
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/vatsalchaudhary/loadforge/apiserver/middleware"
 	"github.com/vatsalchaudhary/loadforge/apiserver/model"
 	"github.com/vatsalchaudhary/loadforge/apiserver/store"
+	reportpkg "github.com/vatsalchaudhary/loadforge/report"
 )
 
 const validPlanJSON = `{
@@ -37,6 +38,8 @@ type fakeStore struct {
 	listLimit  int
 	listOffset int
 	listStatus string
+	report     reportpkg.Report
+	reportErr  error
 }
 
 func (s *fakeStore) Authenticate(context.Context, string) (model.APIKey, error) {
@@ -77,6 +80,9 @@ func (s *fakeStore) ListRuns(_ context.Context, limit, offset int, status string
 	return s.list, s.total, nil
 }
 func (s *fakeStore) PingPostgres(context.Context) error { return s.pingErr }
+func (s *fakeStore) BuildReport(context.Context, string) (reportpkg.Report, error) {
+	return s.report, s.reportErr
+}
 
 type fakeOrch struct {
 	submitted int
@@ -213,6 +219,34 @@ func TestGetRunListStopStreamAndNotFound(t *testing.T) {
 	rec = request(t, h, http.MethodGet, "/runs/"+uuid.NewString(), "", true)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("missing run status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestReportRoutesRequireTerminalRun(t *testing.T) {
+	id := uuid.NewString()
+	s := &fakeStore{
+		runs: map[string]model.Run{id: {RunID: id, Name: "checkout", Status: "RUNNING"}},
+		report: reportpkg.Report{
+			RunID: id, Name: "checkout", Status: "DONE",
+			Overall: reportpkg.Stats{TotalRequests: 10, P95LatencyMS: 20, P99LatencyMS: 30},
+		},
+	}
+	h := protectedHandler(s, &fakeOrch{}, &fakeStream{}, nil)
+
+	rec := request(t, h, http.MethodGet, "/runs/"+id+"/report", "", true)
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "terminal state") {
+		t.Fatalf("mid-run report status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	s.runs[id] = model.Run{RunID: id, Name: "checkout", Status: "DONE"}
+	rec = request(t, h, http.MethodGet, "/runs/"+id+"/report", "", true)
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/json" || !strings.Contains(rec.Body.String(), `"run_id": "`+id+`"`) {
+		t.Fatalf("json report status=%d content-type=%q body=%s", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
+	}
+
+	rec = request(t, h, http.MethodGet, "/runs/"+id+"/report.html", "", true)
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), "LoadForge Report") {
+		t.Fatalf("html report status=%d content-type=%q body=%s", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
 	}
 }
 

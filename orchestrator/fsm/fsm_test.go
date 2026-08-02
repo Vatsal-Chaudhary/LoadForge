@@ -27,6 +27,7 @@ func TestTransitionMatrix(t *testing.T) {
 		run.StateProvisioning,
 		run.StateRunning,
 		run.StateScaling,
+		run.StateThresholdBreached,
 		run.StateDraining,
 		run.StateDone,
 		run.StateFailed,

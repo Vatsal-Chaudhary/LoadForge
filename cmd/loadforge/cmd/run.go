@@ -78,6 +78,9 @@ func waitCI(cli *CLI, client *cliclient.Client, runID string) error {
 		case "FAILED":
 			fmt.Fprintf(cli.out, "FAILED: %s\n", render.Summary(run))
 			return ciFailed("run failed")
+		case "THRESHOLD_BREACHED":
+			fmt.Fprintf(cli.out, "THRESHOLD_BREACHED: %s\n", render.Summary(run))
+			return ciFailed("threshold breached")
 		}
 		<-ticker.C
 	}

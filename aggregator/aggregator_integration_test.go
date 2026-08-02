@@ -76,6 +76,7 @@ func TestMetricsPipeline(t *testing.T) {
 		_ = redisClient.Del(context.Background(),
 			"loadforge:run:"+runID+":rps",
 			"loadforge:run:"+runID+":p95",
+			"loadforge:run:"+runID+":p99",
 			"loadforge:run:"+runID+":error_rate",
 		).Err()
 	})
@@ -132,6 +133,9 @@ FROM metric_snapshots WHERE run_id = $1`, runID).
 	}
 	if got, err := redisClient.Get(ctx, "loadforge:run:"+runID+":p95").Float64(); err != nil || got < 19.9 {
 		t.Fatalf("Redis p95 = %v, %v", got, err)
+	}
+	if got, err := redisClient.Get(ctx, "loadforge:run:"+runID+":p99").Float64(); err != nil || got < 19.9 {
+		t.Fatalf("Redis p99 = %v, %v", got, err)
 	}
 	if got, err := redisClient.Get(ctx, "loadforge:run:"+runID+":error_rate").Float64(); err != nil || got != 0.5 {
 		t.Fatalf("Redis error_rate = %v, %v", got, err)

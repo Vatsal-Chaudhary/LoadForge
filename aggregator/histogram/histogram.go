@@ -25,6 +25,14 @@ func New() *Histogram {
 	return &Histogram{h: hdr.New(minMicros, maxMicros, 3)}
 }
 
+func Decode(encoded string) (*Histogram, error) {
+	h, err := hdr.Decode([]byte(encoded))
+	if err != nil {
+		return nil, err
+	}
+	return &Histogram{h: h}, nil
+}
+
 func (h *Histogram) RecordMilliseconds(value float64) {
 	micros := int64(math.Round(value * 1000))
 	if micros < minMicros {
@@ -45,6 +53,15 @@ func (h *Histogram) Percentiles() Percentiles {
 		P95: float64(h.h.ValueAtQuantile(95)) / 1000,
 		P99: float64(h.h.ValueAtQuantile(99)) / 1000,
 	}
+}
+
+func (h *Histogram) Encode() (string, error) {
+	encoded, err := h.h.Encode(hdr.V2CompressedEncodingCookieBase)
+	return string(encoded), err
+}
+
+func (h *Histogram) TotalCount() int64 {
+	return h.h.TotalCount()
 }
 
 func (h *Histogram) Merge(other *Histogram) {

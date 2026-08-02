@@ -86,13 +86,14 @@ func ValidTransition(from, to run.State) bool {
 }
 
 var validTransitions = map[run.State]map[run.State]bool{
-	run.StatePending:      {run.StateProvisioning: true, run.StateDraining: true, run.StateFailed: true},
-	run.StateProvisioning: {run.StateRunning: true, run.StateDraining: true, run.StateFailed: true},
-	run.StateRunning:      {run.StateScaling: true, run.StateDraining: true, run.StateFailed: true},
-	run.StateScaling:      {run.StateRunning: true, run.StateDraining: true, run.StateFailed: true},
-	run.StateDraining:     {run.StateDone: true, run.StateFailed: true},
-	run.StateDone:         {},
-	run.StateFailed:       {},
+	run.StatePending:           {run.StateProvisioning: true, run.StateDraining: true, run.StateFailed: true},
+	run.StateProvisioning:      {run.StateRunning: true, run.StateDraining: true, run.StateFailed: true},
+	run.StateRunning:           {run.StateScaling: true, run.StateDraining: true, run.StateFailed: true, run.StateThresholdBreached: true},
+	run.StateScaling:           {run.StateRunning: true, run.StateDraining: true, run.StateFailed: true},
+	run.StateThresholdBreached: {run.StateDraining: true, run.StateDone: true, run.StateFailed: true},
+	run.StateDraining:          {run.StateDone: true, run.StateFailed: true, run.StateThresholdBreached: true},
+	run.StateDone:              {},
+	run.StateFailed:            {},
 }
 
 type PostgresStore struct {
@@ -163,7 +164,7 @@ VALUES ($1, $2, $3, $4, $5)`, t.RunID, t.From, t.To, t.Reason, t.CreatedAt); err
 UPDATE test_runs
 SET status = $2,
 	started_at = CASE WHEN $2 = 'RUNNING' THEN COALESCE(started_at, $3) ELSE started_at END,
-	ended_at = CASE WHEN $2 IN ('DONE', 'FAILED') THEN COALESCE(ended_at, $3) ELSE ended_at END
+	ended_at = CASE WHEN $2 IN ('DONE', 'FAILED', 'THRESHOLD_BREACHED') THEN COALESCE(ended_at, $3) ELSE ended_at END
 WHERE id::text = $1`, t.RunID, t.To, t.CreatedAt)
 		if err != nil {
 			return err

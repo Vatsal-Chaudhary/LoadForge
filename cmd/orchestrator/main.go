@@ -22,6 +22,7 @@ import (
 	"github.com/vatsalchaudhary/loadforge/orchestrator/provisioner"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/run"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/scaler"
+	"github.com/vatsalchaudhary/loadforge/orchestrator/threshold"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/watchdog"
 	pb "github.com/vatsalchaudhary/loadforge/proto"
 	"google.golang.org/grpc"
@@ -32,17 +33,19 @@ import (
 type server struct {
 	pb.UnimplementedWorkerControlServer
 	pb.UnimplementedOperatorControlServer
-	mu       sync.RWMutex
-	runs     map[string]run.TestRun
-	plans    map[string][]byte
-	registry *memoryRegistry
-	signals  *signalHub
-	watchdog *watchdog.Manager
-	rootCtx  context.Context
-	store    fsm.Store
-	prov     scaler.Provisioner
-	cfg      run.OrchestratorConfig
-	log      *slog.Logger
+	mu              sync.RWMutex
+	runs            map[string]run.TestRun
+	plans           map[string][]byte
+	registry        *memoryRegistry
+	signals         *signalHub
+	watchdog        *watchdog.Manager
+	rootCtx         context.Context
+	store           fsm.Store
+	thresholdStore  threshold.Store
+	thresholdReader threshold.MetricsReader
+	prov            scaler.Provisioner
+	cfg             run.OrchestratorConfig
+	log             *slog.Logger
 }
 
 func main() {
@@ -67,6 +70,7 @@ func main() {
 
 	var fsmStore fsm.Store = &memoryFSMStore{}
 	var eventStore watchdog.EventStore
+	var thresholdStore threshold.Store
 	if cfg.PostgresDSN != "" {
 		store, err := fsm.OpenPostgres(rootCtx, cfg.PostgresDSN)
 		if err != nil {
@@ -81,6 +85,23 @@ func main() {
 		} else {
 			defer events.Close()
 			eventStore = events
+		}
+		thresholds, err := threshold.OpenPostgresStore(rootCtx, cfg.PostgresDSN)
+		if err != nil {
+			logger.Warn("postgres threshold store unavailable", "error", err)
+		} else {
+			defer thresholds.Close()
+			thresholdStore = thresholds
+		}
+	}
+	var thresholdReader threshold.MetricsReader
+	if cfg.RedisAddr != "" {
+		redisClient, err := threshold.OpenRedis(rootCtx, cfg.RedisAddr)
+		if err != nil {
+			logger.Warn("redis threshold reader unavailable", "error", err)
+		} else {
+			defer redisClient.Close()
+			thresholdReader = threshold.NewRedisReader(redisClient)
 		}
 	}
 
@@ -99,6 +120,8 @@ func main() {
 		prov = noopProvisioner{log: logger}
 	}
 	srv.store = fsmStore
+	srv.thresholdStore = thresholdStore
+	srv.thresholdReader = thresholdReader
 	srv.prov = prov
 	srv.cfg = cfg
 	srv.log = logger
@@ -174,6 +197,7 @@ func startManualRun(ctx context.Context, path string, cfg run.OrchestratorConfig
 	testRun.State = run.StateRunning
 	testRun.StartedAt = time.Now().UTC()
 	srv.addRun(testRun, planJSON)
+	srv.startThresholdChecker(ctx, testRun, machine)
 
 	if plan.LoadProfile.Type == "step_ramp" {
 		stepInterval, _ := time.ParseDuration(plan.LoadProfile.StepInterval)
@@ -253,6 +277,7 @@ func (s *server) startSubmittedRun(testRun run.TestRun) {
 	s.mu.Lock()
 	s.runs[testRun.ID] = testRun
 	s.mu.Unlock()
+	s.startThresholdChecker(s.rootCtx, testRun, machine)
 
 	if testRun.Plan.LoadProfile.Type == "step_ramp" {
 		stepInterval, _ := time.ParseDuration(testRun.Plan.LoadProfile.StepInterval)
@@ -279,6 +304,53 @@ func (s *server) failRun(runID string, machine *fsm.Machine, cause error) {
 	}
 	s.setRunState(runID, run.StateFailed)
 	s.log.Error("submitted run failed", "run_id", runID, "error", cause)
+}
+
+func (s *server) startThresholdChecker(ctx context.Context, testRun run.TestRun, machine *fsm.Machine) {
+	if testRun.Plan.Thresholds == nil || s.thresholdReader == nil {
+		return
+	}
+	checker := threshold.New(threshold.Config{
+		RunID:      testRun.ID,
+		Thresholds: testRun.Plan.Thresholds,
+		Reader:     s.thresholdReader,
+		Store:      s.thresholdStore,
+		Logger:     s.log,
+		GetState: func() run.State {
+			s.mu.RLock()
+			defer s.mu.RUnlock()
+			return s.runs[testRun.ID].State
+		},
+		SetState: func(state run.State) {
+			s.setRunState(testRun.ID, state)
+		},
+		Transition: machine.Transition,
+		OnStop: func(ctx context.Context) error {
+			return s.stopForThreshold(ctx, testRun, machine)
+		},
+	})
+	go checker.Run(ctx)
+}
+
+func (s *server) stopForThreshold(ctx context.Context, testRun run.TestRun, machine *fsm.Machine) error {
+	if err := machine.Transition(ctx, run.StateDraining, "threshold breach stop policy"); err != nil {
+		return err
+	}
+	s.setRunState(testRun.ID, run.StateDraining)
+	count, err := s.registry.Count(ctx, testRun.ID)
+	if err == nil {
+		err = s.prov.DrainAndRemoveWorkers(ctx, testRun, count)
+	}
+	if err != nil {
+		s.failRun(testRun.ID, machine, err)
+		return err
+	}
+	if err := machine.Transition(ctx, run.StateThresholdBreached, "workers drained after threshold breach"); err != nil {
+		s.failRun(testRun.ID, machine, err)
+		return err
+	}
+	s.setRunState(testRun.ID, run.StateThresholdBreached)
+	return nil
 }
 
 func (s *server) setRunState(runID string, state run.State) {

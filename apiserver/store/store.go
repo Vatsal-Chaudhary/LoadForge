@@ -13,6 +13,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
 	"github.com/vatsalchaudhary/loadforge/apiserver/model"
+	reportpkg "github.com/vatsalchaudhary/loadforge/report"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -87,7 +88,37 @@ CREATE TABLE IF NOT EXISTS api_keys (
 	token_hash BYTEA NOT NULL UNIQUE,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 	revoked_at TIMESTAMPTZ
-);`)
+);
+CREATE TABLE IF NOT EXISTS metric_snapshots (
+	id BIGSERIAL PRIMARY KEY,
+	run_id TEXT NOT NULL,
+	ts TIMESTAMPTZ NOT NULL,
+	endpoint TEXT NOT NULL,
+	method TEXT NOT NULL,
+	rps DOUBLE PRECISION,
+	p50_ms DOUBLE PRECISION,
+	p95_ms DOUBLE PRECISION,
+	p99_ms DOUBLE PRECISION,
+	error_rate DOUBLE PRECISION,
+	req_count BIGINT,
+	err_count BIGINT,
+	status_codes JSONB,
+	latency_histogram TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_metric_snapshots_run_ts
+	ON metric_snapshots(run_id, ts);
+ALTER TABLE metric_snapshots
+	ADD COLUMN IF NOT EXISTS latency_histogram TEXT;
+CREATE TABLE IF NOT EXISTS worker_events (
+	id BIGSERIAL PRIMARY KEY,
+	run_id TEXT NOT NULL,
+	worker_id TEXT NOT NULL,
+	event_type TEXT NOT NULL,
+	message TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_worker_events_run_id_created_at
+	ON worker_events(run_id, created_at);`)
 	return err
 }
 
@@ -96,6 +127,10 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) PingPostgres(ctx context.Context) error { return s.db.PingContext(ctx) }
+
+func (s *Store) BuildReport(ctx context.Context, runID string) (reportpkg.Report, error) {
+	return reportpkg.Builder{DB: s.db}.Build(ctx, runID)
+}
 
 // UUID tokens already carry high entropy, so SHA-256 plus a server-side pepper
 // provides constant-time indexed lookup without persisting a reusable secret.

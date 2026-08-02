@@ -1,6 +1,6 @@
 syntax = "proto3";
 package loadforge.worker.v1;
-option go_package = "github.com/vatsalchaudhary/loadforge/proto/worker/v1";
+option go_package = "github.com/Vatsal-Chaudhary/loadforge/proto/worker/v1";
 
 // ─── Worker Registration ───────────────────────────────────────────────────
 

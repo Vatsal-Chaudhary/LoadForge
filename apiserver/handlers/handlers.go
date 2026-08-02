@@ -19,6 +19,7 @@ import (
 	apistore "github.com/vatsalchaudhary/loadforge/apiserver/store"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/planner"
 	"github.com/vatsalchaudhary/loadforge/pkg/testplan"
+	reportpkg "github.com/vatsalchaudhary/loadforge/report"
 )
 
 const maxRequestBytes = 64 << 20
@@ -30,6 +31,7 @@ type Store interface {
 	GetRun(context.Context, string) (model.Run, error)
 	ListRuns(context.Context, int, int, string) ([]model.Run, int64, error)
 	PingPostgres(context.Context) error
+	BuildReport(context.Context, string) (reportpkg.Report, error)
 }
 
 type Orchestrator interface {
@@ -58,6 +60,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /runs", h.createRun)
 	mux.HandleFunc("GET /runs", h.listRuns)
 	mux.HandleFunc("GET /runs/{run_id}", h.getRun)
+	mux.HandleFunc("GET /runs/{run_id}/report", h.getReportJSON)
+	mux.HandleFunc("GET /runs/{run_id}/report.html", h.getReportHTML)
 	mux.HandleFunc("POST /runs/{run_id}/stop", h.stopRun)
 	mux.HandleFunc("GET /runs/{run_id}/stream", h.streamRun)
 	mux.HandleFunc("POST /validate", h.validate)
@@ -231,6 +235,62 @@ func (h *Handler) stopRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": status})
 }
 
+func (h *Handler) getReportJSON(w http.ResponseWriter, r *http.Request) {
+	h.getReport(w, r, false)
+}
+
+func (h *Handler) getReportHTML(w http.ResponseWriter, r *http.Request) {
+	h.getReport(w, r, true)
+}
+
+func (h *Handler) getReport(w http.ResponseWriter, r *http.Request, html bool) {
+	runID, ok := validRunID(w, r)
+	if !ok {
+		return
+	}
+	run, err := h.store.GetRun(r.Context(), runID)
+	if errors.Is(err, apistore.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "run not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "storage_error", "failed to read test run")
+		return
+	}
+	if !reportReady(run.Status) {
+		writeError(w, http.StatusNotFound, "not_found", "report is not available until the run reaches a terminal state")
+		return
+	}
+	report, err := h.store.BuildReport(r.Context(), runID)
+	if errors.Is(err, reportpkg.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "run not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "storage_error", "failed to build report")
+		return
+	}
+	if html {
+		body, err := reportpkg.HTML(report)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "render_error", "failed to render HTML report")
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+		return
+	}
+	body, err := reportpkg.JSON(report)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "render_error", "failed to render JSON report")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
 func (h *Handler) listRuns(w http.ResponseWriter, r *http.Request) {
 	limit, err := queryInt(r, "limit", 20)
 	if err != nil || limit < 1 || limit > 100 {
@@ -309,6 +369,15 @@ func queryInt(r *http.Request, name string, fallback int) (int, error) {
 func validStatus(status string) bool {
 	switch status {
 	case "PENDING", "PROVISIONING", "RUNNING", "SCALING", "DRAINING", "DONE", "FAILED", "THRESHOLD_BREACHED":
+		return true
+	default:
+		return false
+	}
+}
+
+func reportReady(status string) bool {
+	switch status {
+	case "DONE", "FAILED", "THRESHOLD_BREACHED":
 		return true
 	default:
 		return false

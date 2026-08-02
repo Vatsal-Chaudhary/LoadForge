@@ -133,6 +133,29 @@ func TestCommandsErrorPaths(t *testing.T) {
 	}
 }
 
+func TestRunCIExitsNonZeroOnThresholdBreached(t *testing.T) {
+	planFile := writePlan(t, testPlan)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/runs":
+			apiWrite(t, w, http.StatusAccepted, cliclient.CreateRunResponse{RunID: "run-1", Status: "PENDING"})
+		case r.Method == http.MethodGet && r.URL.Path == "/runs/run-1":
+			apiWrite(t, w, http.StatusOK, model.Run{RunID: "run-1", Status: "THRESHOLD_BREACHED"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer srv.Close()
+
+	out, _, err := runCommandForTest(t, "--api-url", srv.URL, "run", "--ci", planFile)
+	if err == nil {
+		t.Fatalf("expected CI error, out=%s", out)
+	}
+	if !strings.Contains(out, "THRESHOLD_BREACHED") {
+		t.Fatalf("missing threshold status in output:\n%s", out)
+	}
+}
+
 func TestConfigRoundTripAndMasking(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), ".loadforge")
 	out, _, err := runCommandInDir(t, dir, "config", "set", "api_url", "http://api.example")

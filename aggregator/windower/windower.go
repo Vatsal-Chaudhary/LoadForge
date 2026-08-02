@@ -37,9 +37,11 @@ type Snapshot struct {
 	ReqCount    int64
 	ErrCount    int64
 	StatusCodes map[string]int64
+	LatencyHist string
 
 	RunRPS       float64
 	RunP95Ms     float64
+	RunP99Ms     float64
 	RunErrorRate float64
 }
 
@@ -221,12 +223,17 @@ func (w *Windower) closeMatching(ctx context.Context, match func(bucketKey) bool
 	rollups := make(map[string]*rollup)
 	for _, b := range closed {
 		p := b.histogram.Percentiles()
+		encodedHist, err := b.histogram.Encode()
+		if err != nil {
+			w.log.Warn("latency histogram encode failed", "run_id", b.key.RunID, "endpoint", b.key.Endpoint,
+				"method", b.key.Method, "error", err)
+		}
 		snapshot := Snapshot{
 			Key: b.key.Key, Timestamp: b.key.Start.Add(w.window), Window: w.window,
 			RPS:   float64(b.reqCount) / w.window.Seconds(),
 			P50Ms: p.P50, P95Ms: p.P95, P99Ms: p.P99,
 			ReqCount: b.reqCount, ErrCount: b.errCount,
-			StatusCodes: cloneMap(b.statusCodes),
+			StatusCodes: cloneMap(b.statusCodes), LatencyHist: encodedHist,
 		}
 		if b.reqCount > 0 {
 			snapshot.ErrorRate = float64(b.errCount) / float64(b.reqCount)
@@ -248,7 +255,9 @@ func (w *Windower) closeMatching(ctx context.Context, match func(bucketKey) bool
 		start := snapshots[i].Timestamp.Add(-w.window)
 		r := rollups[start.Format(time.RFC3339Nano)+"\x00"+snapshots[i].Key.RunID]
 		snapshots[i].RunRPS = float64(r.req) / w.window.Seconds()
-		snapshots[i].RunP95Ms = r.hist.Percentiles().P95
+		runPercentiles := r.hist.Percentiles()
+		snapshots[i].RunP95Ms = runPercentiles.P95
+		snapshots[i].RunP99Ms = runPercentiles.P99
 		if r.req > 0 {
 			snapshots[i].RunErrorRate = float64(r.err) / float64(r.req)
 		}

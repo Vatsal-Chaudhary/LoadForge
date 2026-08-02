@@ -98,10 +98,13 @@ CREATE TABLE IF NOT EXISTS metric_snapshots (
 	error_rate DOUBLE PRECISION,
 	req_count BIGINT,
 	err_count BIGINT,
-	status_codes JSONB
+	status_codes JSONB,
+	latency_histogram TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_metric_snapshots_run_ts
-	ON metric_snapshots(run_id, ts);`)
+	ON metric_snapshots(run_id, ts);
+ALTER TABLE metric_snapshots
+	ADD COLUMN IF NOT EXISTS latency_histogram TEXT;`)
 	return err
 }
 
@@ -131,7 +134,7 @@ func (s *Store) writePostgres(ctx context.Context, snapshots []windower.Snapshot
 }
 
 func (s *Store) insertPostgresBatch(ctx context.Context, snapshots []windower.Snapshot) error {
-	const fields = 12
+	const fields = 13
 	args := make([]any, 0, len(snapshots)*fields)
 	values := make([]string, 0, len(snapshots))
 	for i, snapshot := range snapshots {
@@ -149,11 +152,12 @@ func (s *Store) insertPostgresBatch(ctx context.Context, snapshots []windower.Sn
 			snapshot.Key.RunID, snapshot.Timestamp, snapshot.Key.Endpoint, snapshot.Key.Method,
 			snapshot.RPS, snapshot.P50Ms, snapshot.P95Ms, snapshot.P99Ms,
 			snapshot.ErrorRate, snapshot.ReqCount, snapshot.ErrCount, statusCodes,
+			snapshot.LatencyHist,
 		)
 	}
 	query := `INSERT INTO metric_snapshots
 		(run_id, ts, endpoint, method, rps, p50_ms, p95_ms, p99_ms,
-		 error_rate, req_count, err_count, status_codes) VALUES ` + strings.Join(values, ",")
+		 error_rate, req_count, err_count, status_codes, latency_histogram) VALUES ` + strings.Join(values, ",")
 	_, err := s.postgres.ExecContext(ctx, query, args...)
 	return err
 }
@@ -174,6 +178,7 @@ func (s *Store) writeRedis(ctx context.Context, snapshots []windower.Snapshot) e
 		prefix := "loadforge:run:" + runID
 		pipe.Set(ctx, prefix+":rps", snapshot.RunRPS, liveTTL)
 		pipe.Set(ctx, prefix+":p95", snapshot.RunP95Ms, liveTTL)
+		pipe.Set(ctx, prefix+":p99", snapshot.RunP99Ms, liveTTL)
 		pipe.Set(ctx, prefix+":error_rate", snapshot.RunErrorRate, liveTTL)
 	}
 	_, err := pipe.Exec(ctx)
@@ -202,7 +207,7 @@ func (s *Store) PollTerminalRuns(ctx context.Context, interval time.Duration, ev
 			rows, err := s.postgres.QueryContext(ctx, `
 SELECT DISTINCT run_id
 FROM test_run_state_transitions
-WHERE to_state IN ('DONE', 'FAILED') AND created_at > $1 AND created_at <= $2`,
+WHERE to_state IN ('DONE', 'FAILED', 'THRESHOLD_BREACHED') AND created_at > $1 AND created_at <= $2`,
 				watermark, now.UTC())
 			if err != nil {
 				s.log.Warn("terminal run poll failed", "error", err)

@@ -11,13 +11,14 @@ import (
 type State string
 
 const (
-	StatePending      State = "PENDING"
-	StateProvisioning State = "PROVISIONING"
-	StateRunning      State = "RUNNING"
-	StateScaling      State = "SCALING"
-	StateDraining     State = "DRAINING"
-	StateDone         State = "DONE"
-	StateFailed       State = "FAILED"
+	StatePending           State = "PENDING"
+	StateProvisioning      State = "PROVISIONING"
+	StateRunning           State = "RUNNING"
+	StateScaling           State = "SCALING"
+	StateDraining          State = "DRAINING"
+	StateDone              State = "DONE"
+	StateFailed            State = "FAILED"
+	StateThresholdBreached State = "THRESHOLD_BREACHED"
 )
 
 type TestRun struct {
