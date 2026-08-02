@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   orchestrator:
     build:
@@ -9,23 +7,27 @@ services:
       POSTGRES_DSN: postgres://loadforge:secret@postgres:5432/loadforge?sslmode=disable
       REDIS_ADDR: redis:6379
       NATS_URL: nats://nats:4222
+      LOADFORGE_PROVISIONER: docker
       WORKER_IMAGE: loadforge-worker:latest
       WORKER_NAMESPACE: loadforge-workers
-      KUBE_CONFIG_PATH: /root/.kube/config
       MAX_WORKERS_PER_TEST: "100"
       HEARTBEAT_INTERVAL: 5s
       SCALE_CHECK_INTERVAL: 5s
       ORCHESTRATOR_GRPC_ADDR: orchestrator:50051
       ORCHESTRATOR_METRICS_ADDR: :9101
     volumes:
-      - ~/.kube:/root/.kube:ro
+      # Local dev only: this lets the orchestrator control the host Docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "50051:50051"
       - "9101:9101"
     depends_on:
-      - postgres
-      - redis
-      - nats
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
 
   apiserver:
     build:
@@ -42,10 +44,14 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - postgres
-      - redis
-      - orchestrator
-      - nats
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      orchestrator:
+        condition: service_started
+      nats:
+        condition: service_started
 
   aggregator:
     build:
@@ -60,28 +66,23 @@ services:
     ports:
       - "9090:9090"
     depends_on:
-      - nats
-      - postgres
-      - redis
+      nats:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   worker:
+    image: loadforge-worker:latest
     build:
       context: ..
       dockerfile: Dockerfile.worker
-    environment:
-      LOADFORGE_ORCHESTRATOR_ADDR: orchestrator:50051
-      LOADFORGE_TEST_RUN_ID: run-compose-123
-      LOADFORGE_WORKER_ID: worker-compose-456
-      LOADFORGE_NATS_URL: nats://nats:4222
-    depends_on:
-      - orchestrator
-      - nats
+    profiles:
+      - image-build
 
   nats:
     image: nats:2.10-alpine
-    ports:
-      - "4222:4222"
-      - "8222:8222"
 
   postgres:
     image: postgres:16-alpine
@@ -91,13 +92,19 @@ services:
       POSTGRES_PASSWORD: secret
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loadforge -d loadforge"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
 
   prometheus:
     image: prom/prometheus:v2.52.0
@@ -120,3 +127,7 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  default:
+    name: loadforge

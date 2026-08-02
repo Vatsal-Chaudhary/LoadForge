@@ -29,6 +29,7 @@ type TestRun struct {
 }
 
 type OrchestratorConfig struct {
+	Provisioner        string
 	KubeConfigPath     string
 	WorkerNamespace    string
 	WorkerImage        string

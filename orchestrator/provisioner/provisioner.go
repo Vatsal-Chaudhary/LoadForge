@@ -38,6 +38,11 @@ type Provisioner struct {
 	DrainTimeout     time.Duration
 }
 
+type Interface interface {
+	CreateWorkers(ctx context.Context, testRun run.TestRun, count int) error
+	DrainAndRemoveWorkers(ctx context.Context, testRun run.TestRun, count int) error
+}
+
 func NewForConfig(cfg run.OrchestratorConfig, orchestratorAddr string, logger *slog.Logger) (*Provisioner, error) {
 	restConfig, err := kubeConfig(cfg.KubeConfigPath)
 	if err != nil {

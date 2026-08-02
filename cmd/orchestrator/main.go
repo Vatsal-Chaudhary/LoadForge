@@ -20,6 +20,7 @@ import (
 	"github.com/vatsalchaudhary/loadforge/orchestrator/fsm"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/planner"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/provisioner"
+	dockerprovisioner "github.com/vatsalchaudhary/loadforge/orchestrator/provisioner/docker"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/run"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/scaler"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/threshold"
@@ -105,19 +106,10 @@ func main() {
 		}
 	}
 
-	var prov scaler.Provisioner
-	if cfg.WorkerImage != "" {
-		p, err := provisioner.NewForConfig(cfg, envString("ORCHESTRATOR_GRPC_ADDR", "orchestrator:50051"), logger)
-		if err != nil {
-			logger.Warn("kubernetes provisioner unavailable", "error", err)
-		} else {
-			p.Registry = registry
-			p.Signaler = signals
-			prov = p
-		}
-	}
-	if prov == nil {
-		prov = noopProvisioner{log: logger}
+	prov, err := buildProvisioner(rootCtx, cfg, registry, signals, logger)
+	if err != nil {
+		logger.Error("provisioner unavailable", "error", err)
+		os.Exit(1)
 	}
 	srv.store = fsmStore
 	srv.thresholdStore = thresholdStore
@@ -198,6 +190,7 @@ func startManualRun(ctx context.Context, path string, cfg run.OrchestratorConfig
 	testRun.StartedAt = time.Now().UTC()
 	srv.addRun(testRun, planJSON)
 	srv.startThresholdChecker(ctx, testRun, machine)
+	srv.scheduleHoldDurationStop(ctx, testRun, machine)
 
 	if plan.LoadProfile.Type == "step_ramp" {
 		stepInterval, _ := time.ParseDuration(plan.LoadProfile.StepInterval)
@@ -278,6 +271,7 @@ func (s *server) startSubmittedRun(testRun run.TestRun) {
 	s.runs[testRun.ID] = testRun
 	s.mu.Unlock()
 	s.startThresholdChecker(s.rootCtx, testRun, machine)
+	s.scheduleHoldDurationStop(s.rootCtx, testRun, machine)
 
 	if testRun.Plan.LoadProfile.Type == "step_ramp" {
 		stepInterval, _ := time.ParseDuration(testRun.Plan.LoadProfile.StepInterval)
@@ -330,6 +324,49 @@ func (s *server) startThresholdChecker(ctx context.Context, testRun run.TestRun,
 		},
 	})
 	go checker.Run(ctx)
+}
+
+func (s *server) scheduleHoldDurationStop(ctx context.Context, testRun run.TestRun, machine *fsm.Machine) {
+	if testRun.Plan.LoadProfile.HoldDuration == "" {
+		return
+	}
+	duration, err := time.ParseDuration(testRun.Plan.LoadProfile.HoldDuration)
+	if err != nil || duration <= 0 {
+		return
+	}
+	go func() {
+		timer := time.NewTimer(duration)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		s.mu.RLock()
+		current := s.runs[testRun.ID].State
+		s.mu.RUnlock()
+		if current != run.StateRunning && current != run.StateScaling {
+			return
+		}
+		if err := machine.Transition(ctx, run.StateDraining, "hold duration elapsed"); err != nil {
+			s.failRun(testRun.ID, machine, err)
+			return
+		}
+		s.setRunState(testRun.ID, run.StateDraining)
+		count, err := s.registry.Count(ctx, testRun.ID)
+		if err == nil {
+			err = s.prov.DrainAndRemoveWorkers(ctx, testRun, count)
+		}
+		if err != nil {
+			s.failRun(testRun.ID, machine, err)
+			return
+		}
+		if err := machine.Transition(ctx, run.StateDone, "hold duration elapsed; workers drained"); err != nil {
+			s.failRun(testRun.ID, machine, err)
+			return
+		}
+		s.setRunState(testRun.ID, run.StateDone)
+	}()
 }
 
 func (s *server) stopForThreshold(ctx context.Context, testRun run.TestRun, machine *fsm.Machine) error {
@@ -605,6 +642,7 @@ func startMetricsServer(addr string, logger *slog.Logger) {
 
 func loadConfig() run.OrchestratorConfig {
 	return run.OrchestratorConfig{
+		Provisioner:        envString("LOADFORGE_PROVISIONER", "kubernetes"),
 		KubeConfigPath:     envString("KUBE_CONFIG_PATH", ""),
 		WorkerNamespace:    envString("WORKER_NAMESPACE", "loadforge-workers"),
 		WorkerImage:        envString("WORKER_IMAGE", ""),
@@ -614,6 +652,34 @@ func loadConfig() run.OrchestratorConfig {
 		NATSUrl:            envString("NATS_URL", "nats://localhost:4222"),
 		PostgresDSN:        envString("POSTGRES_DSN", ""),
 		RedisAddr:          envString("REDIS_ADDR", "localhost:6379"),
+	}
+}
+
+func buildProvisioner(ctx context.Context, cfg run.OrchestratorConfig, registry run.WorkerRegistry, signals run.WorkerSignaler, logger *slog.Logger) (scaler.Provisioner, error) {
+	orchestratorAddr := envString("ORCHESTRATOR_GRPC_ADDR", "orchestrator:50051")
+	switch cfg.Provisioner {
+	case "", "kubernetes":
+		if cfg.WorkerImage == "" {
+			return noopProvisioner{log: logger}, nil
+		}
+		p, err := provisioner.NewForConfig(cfg, orchestratorAddr, logger)
+		if err != nil {
+			logger.Warn("kubernetes provisioner unavailable", "error", err)
+			return noopProvisioner{log: logger}, nil
+		}
+		p.Registry = registry
+		p.Signaler = signals
+		return p, nil
+	case "docker":
+		p, err := dockerprovisioner.NewForConfig(ctx, cfg, orchestratorAddr, logger)
+		if err != nil {
+			return nil, err
+		}
+		p.Registry = registry
+		p.Signaler = signals
+		return p, nil
+	default:
+		return nil, errors.New("LOADFORGE_PROVISIONER must be kubernetes or docker")
 	}
 }
 

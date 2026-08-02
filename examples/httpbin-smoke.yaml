@@ -1,0 +1,19 @@
+name: httpbin-smoke
+version: "1"
+target:
+  base_url: https://httpbin.org
+  timeout: 5s
+load_profile:
+  type: constant
+  initial_workers: 1
+  hold_duration: 10s
+workers:
+  virtual_users_per_worker: 1
+scenarios:
+  - name: get
+    weight: 1
+    steps:
+      - name: get
+        method: GET
+        path: /get
+        think_time: 100ms
