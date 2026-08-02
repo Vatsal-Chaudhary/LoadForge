@@ -1,0 +1,213 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "name": "Worker events",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "enable": true,
+        "expr": "changes(loadforge_worker_events_total{run_id=~\"$run_id\",event=~\"REGISTERED|UNHEALTHY|REPLACED\"}[1m]) > 0",
+        "iconColor": "red",
+        "tagKeys": "worker_id,event",
+        "textFormat": "{{worker_id}} {{event}}"
+      }
+    ]
+  },
+  "description": "Fleet health from aggregator, worker process, and orchestrator event metrics. Per-worker dispatch rate is intentionally marked unavailable because that series is not currently exposed.",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Active Workers over time",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "loadforge_active_workers{run_id=~\"$run_id\"}",
+          "legendFormat": "{{run_id}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Per-Worker CPU Usage",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(process_cpu_seconds_total{worker_id=~\"$worker_id\"}[1m])",
+          "legendFormat": "{{worker_id}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores",
+          "min": 0
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Per-Worker Memory Usage",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "process_resident_memory_bytes{worker_id=~\"$worker_id\"}",
+          "legendFormat": "{{worker_id}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Per-Worker Goroutine Count",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "go_goroutines{worker_id=~\"$worker_id\"}",
+          "legendFormat": "{{worker_id}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "id": 5,
+      "type": "text",
+      "title": "Per-Worker Request Dispatch Rate",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Metric gap\nThe aggregator exports `loadforge_request_total` without a `worker_id` label, and workers expose no dispatched-request counter. A truthful per-worker RPS query is therefore not available."
+      }
+    },
+    {
+      "id": 6,
+      "type": "text",
+      "title": "Worker Events Timeline",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "`REGISTERED`, `UNHEALTHY`, and `REPLACED` events are shown as dashboard annotations from the real `loadforge_worker_events_total` counter."
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "loadforge",
+    "fleet"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      },
+      {
+        "name": "run_id",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": {
+          "query": "label_values(loadforge_active_workers, run_id)"
+        },
+        "includeAll": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "worker_id",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": {
+          "query": "label_values(process_cpu_seconds_total, worker_id)"
+        },
+        "includeAll": true,
+        "allValue": ".*"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "title": "LoadForge / Fleet Health",
+  "uid": "loadforge-fleet-health",
+  "version": 1
+}

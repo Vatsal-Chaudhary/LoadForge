@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -27,15 +28,17 @@ const (
 )
 
 type Provisioner struct {
-	Client           kubernetes.Interface
-	WorkerNamespace  string
-	WorkerImage      string
-	OrchestratorAddr string
-	NATSURL          string
-	Registry         run.WorkerRegistry
-	Signaler         run.WorkerSignaler
-	Log              *slog.Logger
-	DrainTimeout     time.Duration
+	Client               kubernetes.Interface
+	WorkerNamespace      string
+	WorkerImage          string
+	OrchestratorAddr     string
+	NATSURL              string
+	Registry             run.WorkerRegistry
+	Signaler             run.WorkerSignaler
+	Log                  *slog.Logger
+	DrainTimeout         time.Duration
+	WorkerServiceAccount string
+	WorkerResources      corev1.ResourceRequirements
 }
 
 type Interface interface {
@@ -53,13 +56,15 @@ func NewForConfig(cfg run.OrchestratorConfig, orchestratorAddr string, logger *s
 		return nil, err
 	}
 	return &Provisioner{
-		Client:           client,
-		WorkerNamespace:  defaultString(cfg.WorkerNamespace, "loadforge-workers"),
-		WorkerImage:      cfg.WorkerImage,
-		OrchestratorAddr: orchestratorAddr,
-		NATSURL:          cfg.NATSUrl,
-		Log:              logger,
-		DrainTimeout:     30 * time.Second,
+		Client:               client,
+		WorkerNamespace:      defaultString(cfg.WorkerNamespace, "loadforge-workers"),
+		WorkerImage:          cfg.WorkerImage,
+		OrchestratorAddr:     orchestratorAddr,
+		NATSURL:              cfg.NATSUrl,
+		Log:                  logger,
+		DrainTimeout:         30 * time.Second,
+		WorkerServiceAccount: defaultString(cfg.WorkerServiceAccount, "loadforge-worker"),
+		WorkerResources:      workerResources(cfg),
 	}, nil
 }
 
@@ -184,16 +189,35 @@ func emitPodEvent(obj interface{}, onEvent func(event PodEvent)) {
 }
 
 func (p *Provisioner) workerPod(runID, workerID string) *corev1.Pod {
+	runAsUser := int64(1000)
+	runAsNonRoot := true
+	allowPrivilegeEscalation := false
+	readOnlyRootFilesystem := true
 	labels := map[string]string{LabelRunID: runID, LabelWorkerID: workerID, "app": "loadforge-worker"}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: workerID, Namespace: p.WorkerNamespace, Labels: labels},
 		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
+			RestartPolicy:                corev1.RestartPolicyNever,
+			ServiceAccountName:           defaultString(p.WorkerServiceAccount, "loadforge-worker"),
+			AutomountServiceAccountToken: boolPtr(false),
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot:   &runAsNonRoot,
+				RunAsUser:      &runAsUser,
+				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+			},
 			Containers: []corev1.Container{{
 				Name:            "worker",
 				Image:           p.WorkerImage,
 				ImagePullPolicy: corev1.PullIfNotPresent,
-				Ports:           []corev1.ContainerPort{{Name: "metrics", ContainerPort: 9102}},
+				Resources:       defaultWorkerResources(p.WorkerResources),
+				SecurityContext: &corev1.SecurityContext{
+					AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+					ReadOnlyRootFilesystem:   &readOnlyRootFilesystem,
+					RunAsNonRoot:             &runAsNonRoot,
+					RunAsUser:                &runAsUser,
+					Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+				},
+				Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 9102}},
 				ReadinessProbe: &corev1.Probe{
 					ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/metrics", Port: intstr.FromString("metrics")}},
 					PeriodSeconds: 5,
@@ -208,6 +232,28 @@ func (p *Provisioner) workerPod(runID, workerID string) *corev1.Pod {
 		},
 	}
 }
+
+func workerResources(cfg run.OrchestratorConfig) corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(defaultString(cfg.WorkerCPURequest, "100m")),
+			corev1.ResourceMemory: resource.MustParse(defaultString(cfg.WorkerMemoryRequest, "128Mi")),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(defaultString(cfg.WorkerCPULimit, "500m")),
+			corev1.ResourceMemory: resource.MustParse(defaultString(cfg.WorkerMemoryLimit, "512Mi")),
+		},
+	}
+}
+
+func defaultWorkerResources(resources corev1.ResourceRequirements) corev1.ResourceRequirements {
+	if len(resources.Requests) == 0 || len(resources.Limits) == 0 {
+		return workerResources(run.OrchestratorConfig{})
+	}
+	return resources
+}
+
+func boolPtr(value bool) *bool { return &value }
 
 func defaultString(v, fallback string) string {
 	if v == "" {

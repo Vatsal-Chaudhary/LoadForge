@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "loadforge.fullname" . }}-aggregator
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.aggregator.replicas }}
+  selector:
+    matchLabels: {{- include "loadforge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: aggregator
+  template:
+    metadata:
+      labels: {{- include "loadforge.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: aggregator
+    spec:
+      serviceAccountName: {{ include "loadforge.fullname" . }}-aggregator
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: aggregator
+          image: {{ include "loadforge.image" .Values.images.aggregator | quote }}
+          imagePullPolicy: {{ .Values.images.aggregator.pullPolicy }}
+          {{- if .Values.postgresql.enabled }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - 'export POSTGRES_DSN="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@{{ include "loadforge.postgresHost" . }}:5432/${POSTGRES_DATABASE}?sslmode=disable"; exec /app/aggregator'
+          {{- end }}
+          ports: [{name: metrics, containerPort: 9090}]
+          env:
+            - {name: AGGREGATOR_WINDOW_SIZE, value: {{ .Values.aggregator.windowSize | quote }}}
+            - {name: AGGREGATOR_GRACE_PERIOD, value: {{ .Values.aggregator.gracePeriod | quote }}}
+            - name: NATS_URL
+              valueFrom: {configMapKeyRef: {name: {{ include "loadforge.fullname" . }}-config, key: NATS_URL}}
+            - name: REDIS_ADDR
+              valueFrom: {configMapKeyRef: {name: {{ include "loadforge.fullname" . }}-config, key: REDIS_ADDR}}
+            - name: REDIS_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "loadforge.fullname" . }}-secrets, key: REDIS_PASSWORD}}
+            {{- if .Values.postgresql.enabled }}
+            - {name: POSTGRES_USER, value: {{ .Values.postgresql.auth.username | quote }}}
+            - {name: POSTGRES_DATABASE, value: {{ .Values.postgresql.auth.database | quote }}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-postgresql, key: password}}
+            {{- else }}
+            - name: POSTGRES_DSN
+              valueFrom: {secretKeyRef: {name: {{ include "loadforge.fullname" . }}-secrets, key: POSTGRES_DSN}}
+            {{- end }}
+          readinessProbe: {httpGet: {path: /readyz, port: metrics}}
+          livenessProbe: {httpGet: {path: /healthz, port: metrics}}
+          resources: {{ toYaml .Values.aggregator.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+            runAsNonRoot: true
+            runAsUser: 1000
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: {type: RuntimeDefault}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "loadforge.fullname" . }}-aggregator
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: aggregator
+spec:
+  selector: {{- include "loadforge.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: aggregator
+  ports: [{name: metrics, port: 9090, targetPort: metrics}]

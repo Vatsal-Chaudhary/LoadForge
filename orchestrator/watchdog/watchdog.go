@@ -6,8 +6,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/run"
 )
+
+var workerEventsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "loadforge_worker_events_total",
+	Help: "Worker lifecycle events observed by the orchestrator watchdog.",
+}, []string{"run_id", "worker_id", "event"})
+
+func RecordWorkerEvent(runID, workerID, event string) {
+	workerEventsTotal.WithLabelValues(runID, workerID, event).Inc()
+}
 
 type Event struct {
 	RunID     string
@@ -104,6 +115,7 @@ func (m *Manager) loop(ctx context.Context, testRun run.TestRun, workerID string
 }
 
 func (m *Manager) handleUnhealthy(ctx context.Context, testRun run.TestRun, workerID string) {
+	RecordWorkerEvent(testRun.ID, workerID, "UNHEALTHY")
 	if m.Log != nil {
 		m.Log.Warn("worker unhealthy", "run_id", testRun.ID, "worker_id", workerID)
 	}
@@ -118,6 +130,8 @@ func (m *Manager) handleUnhealthy(ctx context.Context, testRun run.TestRun, work
 		})
 	}
 	if testRun.State == run.StateRunning && m.Provisioner != nil {
-		_ = m.Provisioner.CreateWorkers(ctx, testRun, 1)
+		if err := m.Provisioner.CreateWorkers(ctx, testRun, 1); err == nil {
+			RecordWorkerEvent(testRun.ID, workerID, "REPLACED")
+		}
 	}
 }

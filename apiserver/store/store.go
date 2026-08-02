@@ -24,7 +24,7 @@ type Store struct {
 	pepper string
 }
 
-func Open(ctx context.Context, postgresDSN, redisAddr, pepper string) (*Store, error) {
+func Open(ctx context.Context, postgresDSN, redisAddr, redisPassword, pepper string) (*Store, error) {
 	if postgresDSN == "" {
 		return nil, errors.New("POSTGRES_DSN is required")
 	}
@@ -42,7 +42,7 @@ func Open(ctx context.Context, postgresDSN, redisAddr, pepper string) (*Store, e
 		db.Close()
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
-	rc := redis.NewClient(&redis.Options{Addr: redisAddr})
+	rc := redis.NewClient(&redis.Options{Addr: redisAddr, Password: redisPassword})
 	if err := rc.Ping(ctx).Err(); err != nil {
 		db.Close()
 		rc.Close()

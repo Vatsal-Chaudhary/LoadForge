@@ -1,0 +1,120 @@
+nameOverride: ""
+fullnameOverride: ""
+imagePullSecrets: []
+
+images:
+  orchestrator:
+    repository: loadforge-orchestrator
+    tag: latest
+    pullPolicy: IfNotPresent
+  apiserver:
+    repository: loadforge-apiserver
+    tag: latest
+    pullPolicy: IfNotPresent
+  aggregator:
+    repository: loadforge-aggregator
+    tag: latest
+    pullPolicy: IfNotPresent
+  worker:
+    repository: loadforge-worker
+    tag: latest
+    pullPolicy: IfNotPresent
+
+orchestrator:
+  replicas: 2
+  maxWorkersPerTest: 100
+  heartbeatInterval: 5s
+  scaleCheckInterval: 5s
+  leaderElection:
+    enabled: true
+    leaseName: loadforge-orchestrator
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+apiserver:
+  replicas: 1
+  rateLimitRPS: 10
+  rateLimitBurst: 20
+  service:
+    type: ClusterIP
+    port: 8080
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 256Mi}
+
+aggregator:
+  replicas: 1
+  windowSize: 10s
+  gracePeriod: 1s
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+
+worker:
+  namespace: loadforge-workers
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+# Keep credentials out of this file. Supply them with --set-string or a local,
+# ignored values-secret.yaml. externalPostgresDSN is required when PostgreSQL is disabled.
+secrets:
+  apiKeyPepper: ""
+  externalPostgresDSN: ""
+  postgresPassword: ""
+  redisPassword: ""
+
+external:
+  redisAddr: ""
+  natsURL: ""
+
+postgresql:
+  enabled: true
+  auth:
+    username: loadforge
+    database: loadforge
+    password: ""
+  primary:
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+
+nats:
+  enabled: true
+  auth:
+    enabled: false
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+networkPolicy:
+  enabled: true
+  natsNamespace: ""
+  natsPodSelector:
+    app.kubernetes.io/name: nats
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+  podMonitor:
+    enabled: true
+  prometheusRule:
+    enabled: true
+  fallbackRules:
+    enabled: true
+  grafanaDashboards:
+    enabled: true
+
+test:
+  image: busybox:1.36

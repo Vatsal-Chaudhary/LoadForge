@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.worker.namespace }}
+  labels:
+    kubernetes.io/metadata.name: {{ .Values.worker.namespace }}
+    loadforge.io/worker-namespace: "true"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: loadforge-worker
+  namespace: {{ .Values.worker.namespace }}
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+automountServiceAccountToken: false

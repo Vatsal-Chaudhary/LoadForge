@@ -44,7 +44,7 @@ func TestPostgresRedisHandlerRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	const pepper = "integration-pepper"
-	persistence, err := store.Open(ctx, postgresDSN, redisAddr, pepper)
+	persistence, err := store.Open(ctx, postgresDSN, redisAddr, "", pepper)
 	if err != nil {
 		t.Fatal(err)
 	}

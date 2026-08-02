@@ -29,16 +29,26 @@ type TestRun struct {
 }
 
 type OrchestratorConfig struct {
-	Provisioner        string
-	KubeConfigPath     string
-	WorkerNamespace    string
-	WorkerImage        string
-	MaxWorkersPerTest  int
-	HeartbeatInterval  time.Duration
-	ScaleCheckInterval time.Duration
-	NATSUrl            string
-	PostgresDSN        string
-	RedisAddr          string
+	Provisioner          string
+	KubeConfigPath       string
+	WorkerNamespace      string
+	WorkerImage          string
+	MaxWorkersPerTest    int
+	HeartbeatInterval    time.Duration
+	ScaleCheckInterval   time.Duration
+	NATSUrl              string
+	PostgresDSN          string
+	RedisAddr            string
+	RedisPassword        string
+	WorkerServiceAccount string
+	WorkerCPURequest     string
+	WorkerCPULimit       string
+	WorkerMemoryRequest  string
+	WorkerMemoryLimit    string
+	LeaderElection       bool
+	LeaderLeaseName      string
+	LeaderLeaseNamespace string
+	LeaderIdentity       string
 }
 
 type Worker struct {

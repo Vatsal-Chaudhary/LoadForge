@@ -1,0 +1,46 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loadforge-worker-egress
+  namespace: {{ .Values.worker.namespace }}
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: loadforge-worker
+  policyTypes: [Egress]
+  egress:
+    # DNS is required to resolve the two permitted service names.
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ .Release.Namespace }}}
+          podSelector:
+            matchLabels:
+              {{- include "loadforge.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: orchestrator
+      ports: [{protocol: TCP, port: 50051}]
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ default .Release.Namespace .Values.networkPolicy.natsNamespace }}
+          podSelector:
+            matchLabels: {{- toYaml .Values.networkPolicy.natsPodSelector | nindent 14 }}
+      ports: [{protocol: TCP, port: 4222}]
+
+# CNI-dependent manual verification after installing a curl-capable debug pod
+# with label app=loadforge-worker in the worker namespace:
+# kubectl exec -n loadforge-workers worker-netcheck -- sh -c \
+#   'nc -vz RELEASE-loadforge-orchestrator.RELEASE_NAMESPACE 50051; \
+#    nc -vz RELEASE-postgresql.RELEASE_NAMESPACE 5432 && exit 1 || true; \
+#    nc -vz RELEASE-loadforge-apiserver.RELEASE_NAMESPACE 8080 && exit 1 || true; \
+#    nc -vz RELEASE-redis-master.RELEASE_NAMESPACE 6379 && exit 1 || true'
+{{- end }}

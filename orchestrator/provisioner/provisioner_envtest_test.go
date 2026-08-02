@@ -18,7 +18,9 @@ func TestCreateWorkersWithEnvtestAPIServer(t *testing.T) {
 	cfg, err := env.Start()
 	if err != nil {
 		if strings.Contains(err.Error(), "unable to start the controlplane") ||
-			strings.Contains(err.Error(), "no such file or directory") {
+			strings.Contains(err.Error(), "unable to start control plane") ||
+			strings.Contains(err.Error(), "no such file or directory") ||
+			strings.Contains(err.Error(), "operation not permitted") {
 			t.Skipf("envtest assets unavailable: %v", err)
 		}
 		t.Fatalf("start envtest: %v", err)

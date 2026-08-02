@@ -18,6 +18,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/fsm"
+	"github.com/vatsalchaudhary/loadforge/orchestrator/leader"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/planner"
 	"github.com/vatsalchaudhary/loadforge/orchestrator/provisioner"
 	dockerprovisioner "github.com/vatsalchaudhary/loadforge/orchestrator/provisioner/docker"
@@ -54,10 +55,10 @@ func main() {
 	slog.SetDefault(logger)
 
 	cfg := loadConfig()
-	startMetricsServer(envString("ORCHESTRATOR_METRICS_ADDR", ":9101"), logger)
-
 	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	leadership := &leader.State{}
+	startMetricsServer(envString("ORCHESTRATOR_METRICS_ADDR", ":9101"), logger, leadership.IsLeader)
 
 	registry := newMemoryRegistry()
 	signals := newSignalHub()
@@ -97,7 +98,7 @@ func main() {
 	}
 	var thresholdReader threshold.MetricsReader
 	if cfg.RedisAddr != "" {
-		redisClient, err := threshold.OpenRedis(rootCtx, cfg.RedisAddr)
+		redisClient, err := threshold.OpenRedis(rootCtx, cfg.RedisAddr, cfg.RedisPassword)
 		if err != nil {
 			logger.Warn("redis threshold reader unavailable", "error", err)
 		} else {
@@ -126,33 +127,62 @@ func main() {
 		Log:         logger,
 	}
 
-	if path := os.Getenv("LOADFORGE_TEST_PLAN_PATH"); path != "" {
-		if err := startManualRun(rootCtx, path, cfg, fsmStore, prov, registry, srv, logger); err != nil {
-			logger.Error("failed to start configured test run", "error", err, "path", path)
-			os.Exit(1)
+	runLeader := func(termCtx context.Context) {
+		if err := serveLeader(termCtx, cfg, fsmStore, prov, registry, srv, logger); err != nil && termCtx.Err() == nil {
+			logger.Error("leader term failed", "error", err)
+			stop()
 		}
-	} else {
-		logger.Info("no LOADFORGE_TEST_PLAN_PATH configured; waiting for workers registered for known manual runs")
 	}
-
-	lis, err := net.Listen("tcp", envString("ORCHESTRATOR_LISTEN_ADDR", ":50051"))
+	if !cfg.LeaderElection {
+		leadership.Set(true)
+		runLeader(rootCtx)
+		leadership.Set(false)
+		return
+	}
+	client, err := leader.Client(cfg.KubeConfigPath)
 	if err != nil {
-		logger.Error("failed to listen", "error", err)
+		logger.Error("leader election Kubernetes client unavailable", "error", err)
 		os.Exit(1)
 	}
+	election, err := leader.New(leader.Config{
+		Client: client, Namespace: cfg.LeaderLeaseNamespace, LeaseName: cfg.LeaderLeaseName,
+		Identity: cfg.LeaderIdentity, State: leadership, Log: logger,
+	})
+	if err != nil {
+		logger.Error("invalid leader election configuration", "error", err)
+		os.Exit(1)
+	}
+	if err := election.Run(rootCtx, runLeader); err != nil && !errors.Is(err, context.Canceled) {
+		logger.Error("leader election stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func serveLeader(ctx context.Context, cfg run.OrchestratorConfig, store fsm.Store, prov scaler.Provisioner, registry scaler.Registry, srv *server, logger *slog.Logger) error {
+	srv.rootCtx = ctx
+	if path := os.Getenv("LOADFORGE_TEST_PLAN_PATH"); path != "" {
+		if err := startManualRun(ctx, path, cfg, store, prov, registry, srv, logger); err != nil {
+			return err
+		}
+	} else {
+		logger.Info("no LOADFORGE_TEST_PLAN_PATH configured; waiting for submitted runs")
+	}
+	lis, err := net.Listen("tcp", envString("ORCHESTRATOR_LISTEN_ADDR", ":50051"))
+	if err != nil {
+		return err
+	}
+	defer lis.Close()
 	grpcServer := grpc.NewServer()
 	pb.RegisterWorkerControlServer(grpcServer, srv)
 	pb.RegisterOperatorControlServer(grpcServer, srv)
-	go func() {
-		<-rootCtx.Done()
-		grpcServer.GracefulStop()
-	}()
-
-	logger.Info("orchestrator grpc server listening", "addr", lis.Addr().String())
+	// A lost lease must close long-lived worker streams immediately so the old
+	// leader cannot continue acting after a successor acquires the lease.
+	go func() { <-ctx.Done(); grpcServer.Stop() }()
+	logger.Info("leader orchestrator grpc server listening", "addr", lis.Addr().String())
 	if err := grpcServer.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-		logger.Error("grpc server stopped", "error", err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 func startManualRun(ctx context.Context, path string, cfg run.OrchestratorConfig, store fsm.Store, prov scaler.Provisioner, registry scaler.Registry, srv *server, logger *slog.Logger) error {
@@ -449,6 +479,7 @@ func (s *server) Register(ctx context.Context, req *pb.WorkerInfo) (*pb.TestPlan
 	if err := s.registry.Register(ctx, run.Worker{RunID: req.RunId, ID: req.WorkerId, PodName: req.WorkerId, LastHeartbeat: time.Now().UTC()}); err != nil {
 		return nil, err
 	}
+	watchdog.RecordWorkerEvent(req.RunId, req.WorkerId, "REGISTERED")
 	s.watchdog.Watch(s.rootCtx, testRun, req.WorkerId)
 	slog.Info("worker registered", "run_id", req.RunId, "worker_id", req.WorkerId, "pod_ip", req.PodIp, "node", req.NodeName)
 	count, _ := s.registry.Count(ctx, req.RunId)
@@ -629,9 +660,17 @@ func (h *signalHub) Take(runID, workerID string) (string, int32) {
 	return item.signal, item.vus
 }
 
-func startMetricsServer(addr string, logger *slog.Logger) {
+func startMetricsServer(addr string, logger *slog.Logger, ready func() bool) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if ready != nil && ready() {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Error(w, "not leader", http.StatusServiceUnavailable)
+	})
 	go func() {
 		logger.Info("orchestrator prometheus metrics server listening", "addr", addr)
 		if err := http.ListenAndServe(addr, mux); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -642,17 +681,35 @@ func startMetricsServer(addr string, logger *slog.Logger) {
 
 func loadConfig() run.OrchestratorConfig {
 	return run.OrchestratorConfig{
-		Provisioner:        envString("LOADFORGE_PROVISIONER", "kubernetes"),
-		KubeConfigPath:     envString("KUBE_CONFIG_PATH", ""),
-		WorkerNamespace:    envString("WORKER_NAMESPACE", "loadforge-workers"),
-		WorkerImage:        envString("WORKER_IMAGE", ""),
-		MaxWorkersPerTest:  envInt("MAX_WORKERS_PER_TEST", 100),
-		HeartbeatInterval:  envDuration("HEARTBEAT_INTERVAL", 5*time.Second),
-		ScaleCheckInterval: envDuration("SCALE_CHECK_INTERVAL", 5*time.Second),
-		NATSUrl:            envString("NATS_URL", "nats://localhost:4222"),
-		PostgresDSN:        envString("POSTGRES_DSN", ""),
-		RedisAddr:          envString("REDIS_ADDR", "localhost:6379"),
+		Provisioner:          envString("LOADFORGE_PROVISIONER", "kubernetes"),
+		KubeConfigPath:       envString("KUBE_CONFIG_PATH", ""),
+		WorkerNamespace:      envString("WORKER_NAMESPACE", "loadforge-workers"),
+		WorkerImage:          envString("WORKER_IMAGE", ""),
+		MaxWorkersPerTest:    envInt("MAX_WORKERS_PER_TEST", 100),
+		HeartbeatInterval:    envDuration("HEARTBEAT_INTERVAL", 5*time.Second),
+		ScaleCheckInterval:   envDuration("SCALE_CHECK_INTERVAL", 5*time.Second),
+		NATSUrl:              envString("NATS_URL", "nats://localhost:4222"),
+		PostgresDSN:          envString("POSTGRES_DSN", ""),
+		RedisAddr:            envString("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:        envString("REDIS_PASSWORD", ""),
+		WorkerServiceAccount: envString("WORKER_SERVICE_ACCOUNT", "loadforge-worker"),
+		WorkerCPURequest:     envString("WORKER_CPU_REQUEST", "100m"),
+		WorkerCPULimit:       envString("WORKER_CPU_LIMIT", "500m"),
+		WorkerMemoryRequest:  envString("WORKER_MEMORY_REQUEST", "128Mi"),
+		WorkerMemoryLimit:    envString("WORKER_MEMORY_LIMIT", "512Mi"),
+		LeaderElection:       envBool("LEADER_ELECTION_ENABLED", false),
+		LeaderLeaseName:      envString("LEADER_ELECTION_LEASE_NAME", "loadforge-orchestrator"),
+		LeaderLeaseNamespace: envString("LEADER_ELECTION_NAMESPACE", "default"),
+		LeaderIdentity:       envString("LEADER_ELECTION_IDENTITY", hostname()),
 	}
+}
+
+func hostname() string {
+	name, err := os.Hostname()
+	if err != nil || name == "" {
+		return "loadforge-orchestrator"
+	}
+	return name
 }
 
 func buildProvisioner(ctx context.Context, cfg run.OrchestratorConfig, registry run.WorkerRegistry, signals run.WorkerSignaler, logger *slog.Logger) (scaler.Provisioner, error) {
@@ -695,6 +752,17 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(val)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+func envBool(key string, fallback bool) bool {
+	val := os.Getenv(key)
+	if val == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(val)
 	if err != nil {
 		return fallback
 	}

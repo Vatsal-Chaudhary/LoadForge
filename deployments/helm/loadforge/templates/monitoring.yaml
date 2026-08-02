@@ -1,0 +1,60 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "loadforge.fullname" . }}-orchestrator
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "loadforge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: orchestrator
+  endpoints: [{port: metrics, interval: 10s}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "loadforge.fullname" . }}-aggregator
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "loadforge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: aggregator
+  endpoints: [{port: metrics, interval: 10s}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "loadforge.fullname" . }}-apiserver
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "loadforge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: apiserver
+  endpoints: [{port: http, path: /metrics, interval: 10s}]
+{{- end }}
+{{- if .Values.monitoring.podMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "loadforge.fullname" . }}-workers
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Values.worker.namespace }}]
+  selector:
+    matchLabels: {app: loadforge-worker}
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 10s
+      relabelings:
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_label_loadforge_io_worker_id]
+          targetLabel: worker_id
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_label_loadforge_io_run_id]
+          targetLabel: run_id
+{{- end }}

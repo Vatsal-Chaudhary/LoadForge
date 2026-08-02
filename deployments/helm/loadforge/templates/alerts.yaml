@@ -1,0 +1,54 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "loadforge.fullname" . }}
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: loadforge.test
+      rules:
+        - alert: HighErrorRate
+          expr: sum by (run_id) (rate(loadforge_request_total{status_code=~"4..|5.."}[1m])) / clamp_min(sum by (run_id) (rate(loadforge_request_total[1m])), 1e-9) > 0.05
+          for: 30s
+          labels: {severity: warning}
+          annotations:
+            summary: "Error rate above 5% for run {{`{{ $labels.run_id }}`}}"
+        - alert: HighP99Latency
+          expr: histogram_quantile(0.99, sum by (run_id, le) (rate(loadforge_request_duration_ms_bucket[1m]))) > 2000
+          for: 30s
+          labels: {severity: warning}
+          annotations:
+            summary: "p99 latency above 2s for run {{`{{ $labels.run_id }}`}}"
+        - alert: WorkerUnhealthy
+          expr: increase(loadforge_worker_events_total{event="UNHEALTHY"}[1m]) > 0
+          labels: {severity: critical}
+{{- end }}
+{{- if .Values.monitoring.fallbackRules.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "loadforge.fullname" . }}-prometheus-rules
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+data:
+  loadforge.rules.yaml: |
+    groups:
+      - name: loadforge.test
+        rules:
+          - alert: HighErrorRate
+            expr: sum by (run_id) (rate(loadforge_request_total{status_code=~"4..|5.."}[1m])) / clamp_min(sum by (run_id) (rate(loadforge_request_total[1m])), 1e-9) > 0.05
+            for: 30s
+            labels: {severity: warning}
+            annotations:
+              summary: "Error rate above 5% for run {{`{{ $labels.run_id }}`}}"
+          - alert: HighP99Latency
+            expr: histogram_quantile(0.99, sum by (run_id, le) (rate(loadforge_request_duration_ms_bucket[1m]))) > 2000
+            for: 30s
+            labels: {severity: warning}
+            annotations:
+              summary: "p99 latency above 2s for run {{`{{ $labels.run_id }}`}}"
+          - alert: WorkerUnhealthy
+            expr: increase(loadforge_worker_events_total{event="UNHEALTHY"}[1m]) > 0
+            labels: {severity: critical}
+{{- end }}

@@ -24,6 +24,7 @@ type config struct {
 	natsURL       string
 	postgresDSN   string
 	redisAddr     string
+	redisPassword string
 	metricsAddr   string
 	window        time.Duration
 	grace         time.Duration
@@ -51,10 +52,11 @@ func run(logger *slog.Logger) error {
 	registry.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	applicationMetrics := exposition.New(registry)
 	persistence, err := store.Open(ctx, store.Config{
-		PostgresDSN: cfg.postgresDSN,
-		RedisAddr:   cfg.redisAddr,
-		Logger:      logger,
-		Registerer:  registry,
+		PostgresDSN:   cfg.postgresDSN,
+		RedisAddr:     cfg.redisAddr,
+		RedisPassword: cfg.redisPassword,
+		Logger:        logger,
+		Registerer:    registry,
 	})
 	if err != nil {
 		return err
@@ -134,9 +136,10 @@ func loadConfig() (config, error) {
 	}
 	return config{
 		natsURL: os.Getenv("NATS_URL"), postgresDSN: os.Getenv("POSTGRES_DSN"),
-		redisAddr:   os.Getenv("REDIS_ADDR"),
-		metricsAddr: envString("AGGREGATOR_METRICS_ADDR", ":9090"),
-		window:      window, grace: grace, lifecyclePoll: poll,
+		redisAddr:     os.Getenv("REDIS_ADDR"),
+		redisPassword: os.Getenv("REDIS_PASSWORD"),
+		metricsAddr:   envString("AGGREGATOR_METRICS_ADDR", ":9090"),
+		window:        window, grace: grace, lifecyclePoll: poll,
 	}, nil
 }
 

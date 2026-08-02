@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "loadforge.fullname" . }}-config
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+data:
+  NATS_URL: {{ include "loadforge.natsURL" . | quote }}
+  REDIS_ADDR: {{ include "loadforge.redisAddr" . | quote }}
+  POSTGRES_DSN_PATTERN: {{ if .Values.postgresql.enabled }}"postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "loadforge.postgresHost" . }}:5432/$(POSTGRES_DATABASE)?sslmode=disable"{{ else }}"supplied by secret POSTGRES_DSN"{{ end }}
+  ORCHESTRATOR_ADDR: {{ printf "%s-orchestrator:50051" (include "loadforge.fullname" .) | quote }}
+  WORKER_NAMESPACE: {{ .Values.worker.namespace | quote }}

@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "loadforge.fullname" . }}-orchestrator
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.orchestrator.replicas }}
+  selector:
+    matchLabels: {{- include "loadforge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: orchestrator
+  template:
+    metadata:
+      labels: {{- include "loadforge.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: orchestrator
+    spec:
+      serviceAccountName: {{ include "loadforge.fullname" . }}-orchestrator
+      terminationGracePeriodSeconds: 30
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: orchestrator
+          image: {{ include "loadforge.image" .Values.images.orchestrator | quote }}
+          imagePullPolicy: {{ .Values.images.orchestrator.pullPolicy }}
+          {{- if .Values.postgresql.enabled }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - 'export POSTGRES_DSN="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@{{ include "loadforge.postgresHost" . }}:5432/${POSTGRES_DATABASE}?sslmode=disable"; exec /app/orchestrator'
+          {{- end }}
+          ports:
+            - {name: grpc, containerPort: 50051}
+            - {name: metrics, containerPort: 9101}
+          env:
+            - {name: LOADFORGE_PROVISIONER, value: kubernetes}
+            - {name: WORKER_NAMESPACE, value: {{ .Values.worker.namespace | quote }}}
+            - {name: WORKER_IMAGE, value: {{ include "loadforge.image" .Values.images.worker | quote }}}
+            - {name: WORKER_SERVICE_ACCOUNT, value: loadforge-worker}
+            - {name: WORKER_CPU_REQUEST, value: {{ .Values.worker.resources.requests.cpu | quote }}}
+            - {name: WORKER_CPU_LIMIT, value: {{ .Values.worker.resources.limits.cpu | quote }}}
+            - {name: WORKER_MEMORY_REQUEST, value: {{ .Values.worker.resources.requests.memory | quote }}}
+            - {name: WORKER_MEMORY_LIMIT, value: {{ .Values.worker.resources.limits.memory | quote }}}
+            - {name: MAX_WORKERS_PER_TEST, value: {{ .Values.orchestrator.maxWorkersPerTest | quote }}}
+            - {name: HEARTBEAT_INTERVAL, value: {{ .Values.orchestrator.heartbeatInterval | quote }}}
+            - {name: SCALE_CHECK_INTERVAL, value: {{ .Values.orchestrator.scaleCheckInterval | quote }}}
+            - {name: LEADER_ELECTION_ENABLED, value: {{ .Values.orchestrator.leaderElection.enabled | quote }}}
+            - {name: LEADER_ELECTION_LEASE_NAME, value: {{ .Values.orchestrator.leaderElection.leaseName | quote }}}
+            - name: LEADER_ELECTION_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: LEADER_ELECTION_IDENTITY
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: ORCHESTRATOR_GRPC_ADDR, value: {{ printf "%s-orchestrator:50051" (include "loadforge.fullname" .) | quote }}}
+            - name: NATS_URL
+              valueFrom: {configMapKeyRef: {name: {{ include "loadforge.fullname" . }}-config, key: NATS_URL}}
+            - name: REDIS_ADDR
+              valueFrom: {configMapKeyRef: {name: {{ include "loadforge.fullname" . }}-config, key: REDIS_ADDR}}
+            - name: REDIS_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "loadforge.fullname" . }}-secrets, key: REDIS_PASSWORD}}
+            {{- if .Values.postgresql.enabled }}
+            - {name: POSTGRES_USER, value: {{ .Values.postgresql.auth.username | quote }}}
+            - {name: POSTGRES_DATABASE, value: {{ .Values.postgresql.auth.database | quote }}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Release.Name }}-postgresql, key: password}}
+            {{- else }}
+            - name: POSTGRES_DSN
+              valueFrom: {secretKeyRef: {name: {{ include "loadforge.fullname" . }}-secrets, key: POSTGRES_DSN}}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /readyz, port: metrics}
+            periodSeconds: 2
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+          resources: {{ toYaml .Values.orchestrator.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+            runAsNonRoot: true
+            runAsUser: 1000
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: {type: RuntimeDefault}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "loadforge.fullname" . }}-orchestrator
+  labels: {{- include "loadforge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orchestrator
+spec:
+  selector: {{- include "loadforge.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: orchestrator
+  ports:
+    - {name: grpc, port: 50051, targetPort: grpc}
+    - {name: metrics, port: 9101, targetPort: metrics}

@@ -28,10 +28,11 @@ type Store struct {
 }
 
 type Config struct {
-	PostgresDSN string
-	RedisAddr   string
-	Logger      *slog.Logger
-	Registerer  prometheus.Registerer
+	PostgresDSN   string
+	RedisAddr     string
+	RedisPassword string
+	Logger        *slog.Logger
+	Registerer    prometheus.Registerer
 }
 
 func Open(ctx context.Context, cfg Config) (*Store, error) {
@@ -66,7 +67,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
-	client := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	client := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
 	if err := client.Ping(ctx).Err(); err != nil {
 		db.Close()
 		client.Close()

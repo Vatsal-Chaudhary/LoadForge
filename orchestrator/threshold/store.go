@@ -55,8 +55,8 @@ func OpenPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) 
 	return store, nil
 }
 
-func OpenRedis(ctx context.Context, addr string) (*redis.Client, error) {
-	client := redis.NewClient(&redis.Options{Addr: addr})
+func OpenRedis(ctx context.Context, addr, password string) (*redis.Client, error) {
+	client := redis.NewClient(&redis.Options{Addr: addr, Password: password})
 	if err := client.Ping(ctx).Err(); err != nil {
 		client.Close()
 		return nil, fmt.Errorf("connect redis: %w", err)

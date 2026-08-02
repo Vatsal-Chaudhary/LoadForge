@@ -15,9 +15,13 @@ RUN go build -ldflags="-w -s" -o bin/worker ./cmd/worker
 # Run stage
 FROM alpine:3.19
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates \
+    && addgroup -g 1000 -S loadforge \
+    && adduser -u 1000 -S -G loadforge loadforge
 
 WORKDIR /app
-COPY --from=builder /app/bin/worker /app/worker
+COPY --from=builder --chown=1000:1000 /app/bin/worker /app/worker
+
+USER 1000:1000
 
 ENTRYPOINT ["/app/worker"]

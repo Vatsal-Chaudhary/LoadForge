@@ -81,6 +81,22 @@ func TestCreateWorkersCreatesLabeledPodsWithEnv(t *testing.T) {
 		env["LOADFORGE_NATS_URL"] != "nats://nats:4222" {
 		t.Fatalf("unexpected env: %v", env)
 	}
+	container := pod.Spec.Containers[0]
+	if pod.Spec.ServiceAccountName != "loadforge-worker" || pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken {
+		t.Fatalf("worker service account/token configuration is not least privilege: %+v", pod.Spec)
+	}
+	if pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.RunAsUser == nil || *pod.Spec.SecurityContext.RunAsUser != 1000 ||
+		pod.Spec.SecurityContext.RunAsNonRoot == nil || !*pod.Spec.SecurityContext.RunAsNonRoot {
+		t.Fatalf("worker pod security context = %+v", pod.Spec.SecurityContext)
+	}
+	if container.SecurityContext == nil || container.SecurityContext.AllowPrivilegeEscalation == nil || *container.SecurityContext.AllowPrivilegeEscalation ||
+		container.SecurityContext.ReadOnlyRootFilesystem == nil || !*container.SecurityContext.ReadOnlyRootFilesystem {
+		t.Fatalf("worker container security context = %+v", container.SecurityContext)
+	}
+	if container.Resources.Limits.Cpu().IsZero() || container.Resources.Limits.Memory().IsZero() ||
+		container.Resources.Requests.Cpu().IsZero() || container.Resources.Requests.Memory().IsZero() {
+		t.Fatalf("worker resource requirements = %+v", container.Resources)
+	}
 }
 
 func TestEmitPodEventDetectsCrashReasons(t *testing.T) {

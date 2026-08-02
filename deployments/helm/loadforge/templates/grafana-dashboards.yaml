@@ -1,0 +1,14 @@
+{{- if .Values.monitoring.grafanaDashboards.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "loadforge.fullname" . }}-grafana-dashboards
+  labels:
+    {{- include "loadforge.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  fleet-health.json: |-
+{{ .Files.Get "dashboards/fleet-health.json" | indent 4 }}
+  application-under-test.json: |-
+{{ .Files.Get "dashboards/application-under-test.json" | indent 4 }}
+{{- end }}

@@ -27,6 +27,7 @@ type config struct {
 	listenAddr       string
 	postgresDSN      string
 	redisAddr        string
+	redisPassword    string
 	orchestratorAddr string
 	natsURL          string
 	apiKeyPepper     string
@@ -52,7 +53,7 @@ func run(logger *slog.Logger) error {
 	startupCtx, cancel := context.WithTimeout(rootCtx, 10*time.Second)
 	defer cancel()
 
-	persistence, err := store.Open(startupCtx, cfg.postgresDSN, cfg.redisAddr, cfg.apiKeyPepper)
+	persistence, err := store.Open(startupCtx, cfg.postgresDSN, cfg.redisAddr, cfg.redisPassword, cfg.apiKeyPepper)
 	if err != nil {
 		return err
 	}
@@ -132,6 +133,7 @@ func loadConfig() (config, error) {
 		listenAddr:       envString("APISERVER_LISTEN_ADDR", ":8080"),
 		postgresDSN:      os.Getenv("POSTGRES_DSN"),
 		redisAddr:        os.Getenv("REDIS_ADDR"),
+		redisPassword:    os.Getenv("REDIS_PASSWORD"),
 		orchestratorAddr: os.Getenv("ORCHESTRATOR_ADDR"),
 		natsURL:          os.Getenv("NATS_URL"),
 		apiKeyPepper:     os.Getenv("API_KEY_PEPPER"),

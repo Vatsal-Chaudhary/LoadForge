@@ -110,6 +110,7 @@ services:
     image: prom/prometheus:v2.52.0
     volumes:
       - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml
+      - ./prometheus/loadforge.rules.yaml:/etc/prometheus/loadforge.rules.yaml:ro
     ports:
       - "9091:9090"
 
@@ -118,7 +119,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
     volumes:
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards/dashboard.yaml:/etc/grafana/provisioning/dashboards/dashboard.yaml:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - ./grafana/datasources:/etc/grafana/provisioning/datasources
     ports:
       - "3000:3000"
